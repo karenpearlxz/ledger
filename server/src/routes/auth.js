@@ -15,6 +15,11 @@ const limiter = rateLimit({
   limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  // Count FAILED attempts only. Brute force is guessing wrong, so that is what
+  // deserves throttling; a correct passcode entered repeatedly (opening the app
+  // on two devices, or a test sweep) should never lock the owner out of her own
+  // ledger. Getting this wrong locked the app for 15 minutes.
+  skipSuccessfulRequests: true,
   message: { error: 'too many attempts, wait a few minutes' },
 });
 
