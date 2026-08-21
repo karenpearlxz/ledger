@@ -107,7 +107,9 @@ async function main() {
     await page.fill('#r-from', FIX_RATE_DATE);
     await page.fill('#r-amt', '2222');
     await page.fill('#r-note', `check ${RUN}`);
-    await page.click('button[type="submit"]:has-text("Save")');
+    // Settings has more than one Save (the Income form has one too), so this
+    // MUST be scoped to the rate form or it silently submits the wrong thing.
+    await page.locator('form:has(#r-from) button[type="submit"]').click();
     await page.waitForSelector(`text=check ${RUN}`, { timeout: 20000 });
     ok('5.1 a rate change can be added from the UI', true);
 
@@ -127,7 +129,7 @@ async function main() {
     await page.fill('#o-amt', '12345');
     await page.selectOption('#o-cur', 'PHP');
     await page.fill('#o-note', `adj ${RUN}`);
-    await page.click('button[type="submit"]:has-text("Save")');
+    await page.locator('form:has(#o-date) button[type="submit"]').click();
     await page.waitForSelector(`text=adj ${RUN}`, { timeout: 20000 });
     ok('6.1 an adjustment can be added from the UI', true);
 

@@ -55,13 +55,40 @@ export default function Bills() {
   const [view, setView] = useState('list');
   const { data, loading, error, reload } = useResource(`/finance?month=${month}`, [month]);
 
+  // Ticking a bill used to wait on a round trip before anything moved, which
+  // on a phone feels broken. Move the UI first, then confirm; put it back if
+  // the server disagrees.
   async function toggle(b) {
     const paidOn = b.paidOn ? null : (data?.today ?? null);
+    const snapshot = data;
+
+    setData((d) => {
+      if (!d) return d;
+      const bills = d.bills.map((x) => (x.id === b.id
+        ? { ...x, paidOn, paidAmount: paidOn ? x.amountPhp : null, overdue: paidOn ? false : x.overdue }
+        : x));
+      // Keep the headline totals honest in the same tick, or the list and the
+      // summary disagree until the refetch lands.
+      const paid = bills.filter((x) => x.paidOn)
+        .reduce((a, x) => a + (x.paidAmount ?? x.amountPhp ?? 0), 0);
+      return {
+        ...d,
+        bills,
+        totals: {
+          ...d.totals,
+          paid: Math.round(paid * 100) / 100,
+          unpaid: Math.round((d.totals.monthlyFixed - paid) * 100) / 100,
+          overdueCount: bills.filter((x) => x.overdue).length,
+        },
+      };
+    });
+
     try {
       await api.patch(`/expenses/payments/${b.id}`, { paidOn });
-      await reload();
       toast(paidOn ? `${b.name} marked paid` : `${b.name} back to unpaid`);
+      reload(); // reconcile in the background; the screen is already right
     } catch (err) {
+      setData(snapshot); // put it back exactly as it was
       toast(err.message, 'error');
     }
   }
@@ -96,6 +123,11 @@ export default function Bills() {
   const dated = bills.filter((b) => !b.spread);
   const spread = bills.filter((b) => b.spread);
   const unpaidTotal = bills.filter((b) => !b.paidOn).reduce((a, b) => a + b.amountPhp, 0);
+  // Actual cheques landing inside the month being viewed, not the averaged
+  // monthly figure: some months carry three paydays and some carry two.
+  const monthIncome = data?.totals?.monthIncome ?? null;
+  const monthLeft = data?.totals?.monthLeft ?? null;
+  const payCount = data?.monthPaychecks?.length ?? 0;
 
   return (
     <div className="space-y-5 enter">
@@ -138,14 +170,33 @@ export default function Bills() {
         </div>
       ) : (
         <>
-          <div className="card p-5 flex justify-between items-baseline gap-3">
-            <div>
-              <p className="eyebrow mb-1">still to pay</p>
-              <p className="font-display text-3xl leading-none">{peso(unpaidTotal)}</p>
-            </div>
-            <div className="text-right">
-              <p className="eyebrow mb-1">month total</p>
-              <p className="amount text-lg">{peso(data?.totals.monthlyFixed)}</p>
+          {/* "Still to pay" and "month total" were the same number whenever
+              nothing was ticked, which told her nothing. The useful question is
+              whether this month clears: what lands, what leaves, what is left. */}
+          <div className="card p-5">
+            <p className="eyebrow mb-1">
+              {monthLeft !== null && monthLeft < 0 ? 'short this month' : 'left after bills'}
+            </p>
+            <p className="font-display text-[2.5rem] leading-none"
+              style={monthLeft !== null && monthLeft < 0 ? { color: 'var(--ember)' } : undefined}>
+              {monthLeft === null ? '—' : peso(monthLeft)}
+            </p>
+
+            <hr className="rule my-4" />
+
+            <div className="flex flex-wrap gap-x-8 gap-y-3">
+              <div className="min-w-0">
+                <p className="eyebrow mb-1">coming in</p>
+                <p className="amount text-lg">{monthIncome === null ? '—' : peso(monthIncome)}</p>
+                <p className="text-xs text-mute mt-0.5">
+                  {payCount === 1 ? '1 paycheck' : `${payCount} paychecks`}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="eyebrow mb-1">bills</p>
+                <p className="amount text-lg">{peso(data?.totals.monthlyFixed)}</p>
+                <p className="text-xs text-mute mt-0.5">{peso(unpaidTotal)} unpaid</p>
+              </div>
             </div>
           </div>
 

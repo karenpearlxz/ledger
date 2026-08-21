@@ -22,9 +22,13 @@ function PaycheckCard({ p, today, highlight }) {
       className="card p-5 shrink-0 w-[280px] snap-start"
       style={highlight ? { borderColor: 'color-mix(in srgb, var(--teal) 55%, transparent)' } : undefined}
     >
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <span className={`chip ${highlight ? 'teal' : ''}`}>{highlight ? 'this paycheck' : 'upcoming'}</span>
-        <span className="text-xs text-mute">{relativeDay(p.payDate, today)}</span>
+      {/* gap-2 let the chip and the date very nearly touch on a 280px card.
+          They need real space, and the date must never wrap mid-phrase. */}
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <span className={`chip shrink-0 ${highlight ? 'teal' : ''}`}>
+          {highlight ? 'this paycheck' : 'upcoming'}
+        </span>
+        <span className="text-xs text-mute whitespace-nowrap">{relativeDay(p.payDate, today)}</span>
       </div>
 
       <p className="font-display text-3xl leading-none">{peso(p.amountPhp)}</p>

@@ -273,7 +273,7 @@
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     padding-bottom: env(safe-area-inset-bottom);
-    background: color-mix(in srgb, var(--paper) 94%, transparent);
+    background: var(--paper);
     border-top: 1px solid var(--line);
   }
   .tabbar a {
@@ -311,8 +311,14 @@
     left: 0;
     right: 0;
     bottom: 0;
+    /* vh first as a fallback: a browser without dvh support drops the whole
+       declaration, leaving the sheet unconstrained and its footer off screen
+       with nothing to scroll. */
+    max-height: calc(100vh - 24px);
     max-height: calc(100dvh - env(safe-area-inset-top) - 24px);
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     padding: 20px max(18px, env(safe-area-inset-left)) calc(20px + env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-right));
     background: var(--bg-2);
     border-top: 1px solid var(--line);
@@ -320,6 +326,29 @@
     animation: rise 0.24s cubic-bezier(0.2, 0.8, 0.25, 1) both;
   }
   @keyframes rise { from { transform: translateY(16px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+
+  .sheet-head { flex: 0 0 auto; margin-bottom: 16px; }
+
+  /* min-height: 0 is what actually makes this scroll. A flex child defaults to
+     min-height: auto, refuses to shrink below its content, and pushes the
+     footer off the bottom of the sheet with no scrollbar anywhere. Same family
+     of bug as min-width: 0 on a truncating flex child. */
+  .sheet-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+
+  .sheet-foot {
+    flex: 0 0 auto;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    background: var(--bg-2);
+  }
 
   @media (min-width: 720px) {
     .sheet {

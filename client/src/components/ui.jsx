@@ -31,7 +31,7 @@ export function Sheet({ title, subtitle, onClose, children, footer }) {
         tabIndex={-1}
         ref={ref}
       >
-        <div className="flex items-start justify-between gap-4 mb-4">
+        <div className="sheet-head flex items-start justify-between gap-4">
           <div>
             <h2 id={headingId} className="text-2xl leading-tight">{title}</h2>
             {subtitle ? <p className="text-sm text-mute mt-1">{subtitle}</p> : null}
@@ -40,8 +40,11 @@ export function Sheet({ title, subtitle, onClose, children, footer }) {
             Close
           </button>
         </div>
-        {children}
-        {footer ? <div className="mt-5 flex gap-2 justify-end flex-wrap">{footer}</div> : null}
+        {/* Only this scrolls. The heading stays put and the footer stays
+            reachable, so Save is never stranded below the fold or the
+            keyboard. */}
+        <div className="sheet-body">{children}</div>
+        {footer ? <div className="sheet-foot flex gap-2 justify-end flex-wrap">{footer}</div> : null}
       </div>
     </>
   );
