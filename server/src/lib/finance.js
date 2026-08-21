@@ -16,6 +16,7 @@ export const shapeExpense = (r) => ({
   notes: r.notes,
   sortOrder: r.sort_order,
   archivedAt: r.archived_at,
+  accountId: r.account_id ?? null,
 });
 
 export const shapePayment = (r) => ({

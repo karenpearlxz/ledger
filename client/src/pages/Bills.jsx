@@ -272,7 +272,9 @@ export default function Bills() {
             frequency: editing.frequency ?? 'monthly',
             notes: editing.notes ?? '',
             endDate: editing.endDate ?? '',
+            accountId: editing.accountId ?? '',
           }}
+          accounts={data?.accounts ?? []}
           onSave={save}
           onDelete={remove}
           onClose={() => setEditing(null)}

@@ -78,7 +78,7 @@ overviewRouter.get('/', route(async (req, res) => {
       // equivalent. The edit sheet must round-trip the former, or a fortnightly
       // cost gets saved back as its own monthly total and grows every time.
       `select p.*, e.name, e.category, e.currency, e.due_day, e.start_date,
-              e.is_recurring, e.frequency, e.amount as base_amount, e.end_date
+              e.is_recurring, e.frequency, e.amount as base_amount, e.end_date, e.account_id
          from expense_payments p join expenses e on e.id = p.expense_id
         where p.period = $1::date
         order by (e.due_day is null), p.due_date, lower(e.name)`,
@@ -144,6 +144,7 @@ overviewRouter.get('/', route(async (req, res) => {
       // Adding a mid-month cost should not paint the month red.
       overdue: !p.paid_on && !spread && compare(due, today) < 0
         && compare(due, isoDate(p.start_date)) >= 0,
+      accountId: p.account_id ?? null,
     };
   });
 

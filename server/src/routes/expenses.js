@@ -28,6 +28,7 @@ const expenseBody = z.object({
   endDate: z.string().regex(DATE).nullable().optional(),
   notes: z.string().max(500).default(''),
   sortOrder: z.coerce.number().int().min(0).max(9999).optional(),
+  accountId: z.string().uuid().nullable().optional(),
 });
 
 expensesRouter.get('/', route(async (_req, res) => {
@@ -50,11 +51,11 @@ expensesRouter.post('/', route(async (req, res) => {
   }
 
   const row = await one(
-    `insert into expenses (name, amount, currency, due_day, category, is_recurring, start_date, end_date, notes, sort_order, frequency)
-          values ($1,$2,$3,$4,$5,$6, coalesce($7::date, current_date), $8, $9, coalesce($10, 100), $11)
+    `insert into expenses (name, amount, currency, due_day, category, is_recurring, start_date, end_date, notes, sort_order, frequency, account_id)
+          values ($1,$2,$3,$4,$5,$6, coalesce($7::date, current_date), $8, $9, coalesce($10, 100), $11, $12)
        returning *`,
     [b.name, b.amount, b.currency, spreadOnly(b.frequency) ? null : (b.dueDay ?? null), b.category, b.isRecurring,
-      b.startDate ?? null, b.endDate ?? null, b.notes, b.sortOrder ?? null, b.frequency],
+      b.startDate ?? null, b.endDate ?? null, b.notes, b.sortOrder ?? null, b.frequency, b.accountId ?? null],
   );
 
   await ensureWindow(todayISO());
@@ -83,6 +84,7 @@ expensesRouter.patch('/:id', route(async (req, res) => {
       : b.endDate,
     notes: b.notes ?? current.notes,
     sortOrder: b.sortOrder ?? current.sort_order,
+    accountId: b.accountId === undefined ? current.account_id : b.accountId,
   };
 
   if (!merged.isRecurring && !merged.dueDay && !spreadOnly(merged.frequency)) {
@@ -95,12 +97,12 @@ expensesRouter.patch('/:id', route(async (req, res) => {
   const row = await one(
     `update expenses set name=$2, amount=$3, currency=$4, due_day=$5, category=$6,
             is_recurring=$7, start_date=$8, end_date=$9, notes=$10, sort_order=$11,
-            frequency=$12, updated_at=now()
+            frequency=$12, account_id=$13, updated_at=now()
       where id=$1 returning *`,
     [req.params.id, merged.name, merged.amount, merged.currency,
       spreadOnly(merged.frequency) ? null : merged.dueDay, merged.category,
       merged.isRecurring, merged.startDate, merged.endDate, merged.notes, merged.sortOrder,
-      merged.frequency],
+      merged.frequency, merged.accountId ?? null],
   );
 
   // Unreconciled future instances follow the definition; anything already
@@ -193,6 +195,34 @@ expensesRouter.patch('/payments/:id', route(async (req, res) => {
       where id=$1 returning *`,
     [req.params.id, amount, paidOn, paidAmount, b.notes ?? current.notes],
   );
+
+  // If payment status changed, adjust account balance
+  const wasPaid = current.paid_on !== null;
+  const nowPaid = paidOn !== null;
+  if (wasPaid !== nowPaid) {
+    // Get the expense's account
+    const expense = await one('select account_id from expenses where id = $1', [current.expense_id]);
+    if (expense?.account_id) {
+      // Get current balance for this account
+      const latestBalance = await one(
+        `select amount from balances where account_id = $1 order by as_of desc, created_at desc limit 1`,
+        [expense.account_id],
+      );
+      if (latestBalance) {
+        const currentBal = Number(latestBalance.amount);
+        const adjustment = nowPaid ? -paidAmount : Number(current.paid_amount);
+        const newBal = currentBal + adjustment;
+        // Insert new balance snapshot for today
+        await query(
+          `insert into balances (account_id, as_of, amount)
+           values ($1, current_date, $2)
+           on conflict (account_id, as_of) do update set amount = $2`,
+          [expense.account_id, newBal],
+        );
+      }
+    }
+  }
+
   res.json({ payment: shapePayment(row) });
 }));
 

@@ -17,7 +17,7 @@ export const shiftMonth = (ym, n) => {
 
 export const blank = {
   name: '', amount: '', category: 'Other', dueDay: '', isRecurring: true,
-  frequency: 'monthly', notes: '', endDate: '',
+  frequency: 'monthly', notes: '', endDate: '', accountId: '',
 };
 
 /** `amount` is one occurrence, so the label has to say which occurrence. */
@@ -38,7 +38,7 @@ export const monthlyEquivalent = (amount, frequency) => {
   return Math.round(n * 100) / 100;
 };
 
-export function ExpenseForm({ initial, onSave, onClose, onDelete }) {
+export function ExpenseForm({ initial, onSave, onClose, onDelete, accounts = [] }) {
   const [form, setForm] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [armed, setArmed] = useState(false);
@@ -62,6 +62,7 @@ export function ExpenseForm({ initial, onSave, onClose, onDelete }) {
       frequency: freq === 'once' ? 'monthly' : freq,
       notes: form.notes,
       endDate: form.endDate || null,
+      accountId: form.accountId || null,
     });
     if (!ok) setBusy(false);
   }
@@ -136,6 +137,17 @@ export function ExpenseForm({ initial, onSave, onClose, onDelete }) {
             <input id="ex-end" className="field" type="date" value={form.endDate || ''} onChange={set('endDate')} />
           </div>
         </div>
+
+        {accounts.length > 0 && (
+          <div>
+            <label className="label" htmlFor="ex-account">Deduct from</label>
+            <select id="ex-account" className="field" value={form.accountId || ''} onChange={set('accountId')}>
+              <option value="">No account</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <p className="text-xs text-mute mt-1">When marked paid, balance is deducted from this account</p>
+          </div>
+        )}
 
         {/* The one number that stops a fortnightly cost being read as monthly. */}
         <p className="text-xs text-mute" data-testid="freq-hint">
