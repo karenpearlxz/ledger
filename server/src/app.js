@@ -13,6 +13,7 @@ import { accountsRouter } from './routes/accounts.js';
 import { authRouter } from './routes/auth.js';
 import { contentRouter } from './routes/content.js';
 import { expensesRouter } from './routes/expenses.js';
+import { salaryRouter } from './routes/salary.js';
 import { goalsRouter } from './routes/goals.js';
 import { overviewRouter } from './routes/overview.js';
 import { transactionsRouter } from './routes/transactions.js';
@@ -63,6 +64,7 @@ export function createApp() {
   app.use('/api/expenses', requireSession, expensesRouter);
   app.use('/api/accounts', requireSession, accountsRouter);
   app.use('/api/goals', requireSession, goalsRouter);
+  app.use('/api/salary', requireSession, salaryRouter);
   app.use('/api/transactions', requireSession, transactionsRouter);
   app.use('/api/content', requireSession, contentRouter);
 

@@ -6,7 +6,8 @@ import { addMonths, compare, monthStart, todayISO } from '../lib/dates.js';
 import { ensureWindow, getSetting, putSetting } from '../lib/finance.js';
 import { getRate } from '../lib/fx.js';
 import { badRequest, isoDate, route } from '../lib/http.js';
-import { FREQUENCIES, monthlyFromPeriodic, paycheckSchedule } from '../lib/payroll.js';
+import { FREQUENCIES, monthlyFromPeriodic, paycheckSchedule, rateOn } from '../lib/payroll.js';
+import { listOverrides, listRates } from './salary.js';
 
 export const overviewRouter = express.Router();
 
@@ -68,7 +69,7 @@ overviewRouter.get('/', route(async (req, res) => {
 
   await ensureWindow(period, 3, 3);
 
-  const [income, fx, expenses, payments, accounts, goals, trend] = await Promise.all([
+  const [income, fx, expenses, payments, accounts, goals, trend, salaryRates, overrideRows] = await Promise.all([
     getSetting('income', { amountUsd: 0, frequency: 'biweekly', anchorPayday: today }),
     getRate(),
     many('select * from expenses where archived_at is null order by sort_order, lower(name)'),
@@ -94,6 +95,8 @@ overviewRouter.get('/', route(async (req, res) => {
          from transactions where on_date >= $1::date group by 1 order by 1`,
       [addMonths(period, -5)],
     ),
+    listRates(),
+    listOverrides(),
   ]);
 
   const rate = fx.rate;
@@ -136,19 +139,47 @@ overviewRouter.get('/', route(async (req, res) => {
   const spreadMonthly = sum(bills.filter((b) => b.spread));
   const spreadPerCheque = round2(spreadMonthly * 12 / perYear);
 
+  // Salary history, newest first, plus one-off overrides keyed by pay date.
+  // An override is what she was ACTUALLY paid, so it wins over any rate.
+  const rates = salaryRates.map((r) => ({
+    effectiveFrom: isoDate(r.effective_from), amountUsd: Number(r.amount_usd), note: r.note,
+  }));
+  const overrides = new Map(overrideRows.map((r) => [isoDate(r.pay_date), {
+    payDate: isoDate(r.pay_date), amount: Number(r.amount), currency: r.currency, note: r.note,
+  }]));
+
   const dated = bills.filter((b) => !b.spread);
   const paychecks = schedule.map((p, i) => {
     const covered = dated.filter((b) => compare(b.dueDate, p.coversFrom) >= 0
       && (!p.coversTo || compare(b.dueDate, p.coversTo) < 0));
     const due = round2(covered.reduce((a, b) => a + (b.amountPhp || 0), 0) + spreadPerCheque);
-    const netPhp = rate ? round2(income.amountUsd * rate) : null;
+    const active = rateOn(p.payDate, rates, income.amountUsd);
+    const override = overrides.get(p.payDate) || null;
+
+    // A PHP override is taken at face value and never re-converted: she already
+    // holds those pesos, so a moving FX rate must not rewrite history.
+    let netUsd = active.amountUsd;
+    let netPhp = rate ? round2(active.amountUsd * rate) : null;
+    if (override) {
+      if (override.currency === 'PHP') {
+        netPhp = round2(override.amount);
+        netUsd = rate ? round2(override.amount / rate) : null;
+      } else {
+        netUsd = round2(override.amount);
+        netPhp = rate ? round2(override.amount * rate) : null;
+      }
+    }
+
     return {
       index: i,
       payDate: p.payDate,
       coversFrom: p.coversFrom,
       coversTo: p.coversTo,
-      amountUsd: income.amountUsd,
+      amountUsd: netUsd,
       amountPhp: netPhp,
+      rateEffectiveFrom: active.effectiveFrom,
+      overridden: Boolean(override),
+      override,
       billsDue: round2(due),
       spreadShare: spreadPerCheque,
       leftover: netPhp === null ? null : round2(netPhp - due),

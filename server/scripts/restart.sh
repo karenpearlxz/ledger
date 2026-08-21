@@ -17,8 +17,13 @@ cd "$ROOT"
 
 echo "stopping anything on :$PORT"
 
+# The sandbox init starts this server as root, so an unprivileged kill gets
+# EPERM and the "restart" silently leaves the old code on the port. Always try
+# sudo as a fallback.
+zap() { kill -9 "$1" 2>/dev/null || sudo -n kill -9 "$1" 2>/dev/null || true; }
+
 if [[ -f "$PIDFILE" ]]; then
-  kill -9 "$(cat "$PIDFILE")" 2>/dev/null || true
+  zap "$(cat "$PIDFILE")"
   rm -f "$PIDFILE"
 fi
 
@@ -26,15 +31,17 @@ fi
 # `|| true` matters: pgrep exits 1 when nothing matches, and with
 # `set -o pipefail` that would abort the script on a clean machine.
 { pgrep -f "$ROOT/server/src/dev.js" 2>/dev/null || true; } | while read -r pid; do
-  kill -9 "$pid" 2>/dev/null || true
+  zap "$pid"
 done
 
 # A process started with a RELATIVE path has a different command line and the
 # pattern above misses it entirely, which is exactly how a stale server
 # survives a "restart". So also kill whoever actually holds the port.
-{ ss -lptnH "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' || true; } | sort -u | while read -r pid; do
+# ss only reveals pid= for processes we own, so ask again with privileges.
+{ { ss -lptnH "sport = :$PORT" 2>/dev/null; sudo -n ss -lptnH "sport = :$PORT" 2>/dev/null; } \
+    | grep -oP 'pid=\K[0-9]+' || true; } | sort -u | while read -r pid; do
   echo "  killing pid $pid holding :$PORT"
-  kill -9 "$pid" 2>/dev/null || true
+  zap "$pid"
 done
 
 for _ in $(seq 1 20); do
@@ -49,14 +56,15 @@ fi
 
 echo "starting"
 setsid node "$ROOT/server/src/dev.js" >"$LOG" 2>&1 </dev/null &
-NEW_PID=$!
-echo "$NEW_PID" >"$PIDFILE"
+# NOT $!: setsid forks, so that pid is the wrapper and it exits immediately.
+# Checking it for liveness reports a perfectly healthy API as dead on startup.
+alive() { pgrep -f "$ROOT/server/src/dev.js" >/dev/null 2>&1; }
 
 for _ in $(seq 1 40); do
   if curl -sf "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
     break
   fi
-  if ! kill -0 "$NEW_PID" 2>/dev/null; then
+  if ! alive; then
     echo "FAILED: the API died on startup. Log:" >&2
     cat "$LOG" >&2
     exit 1
@@ -73,6 +81,7 @@ fi
 # Prove the running code is the code on disk. If a stale process had kept the
 # port, this would still be serving and everything above would have "passed".
 LIVE_PID="$(pgrep -f "$ROOT/server/src/dev.js" 2>/dev/null | head -1 || true)"
+[[ -n "$LIVE_PID" ]] && echo "$LIVE_PID" >"$PIDFILE"
 echo "up: pid $LIVE_PID on :$PORT, log $LOG"
 curl -s -o /dev/null -D - "http://127.0.0.1:$PORT/api/health" 2>/dev/null \
   | grep -i '^ratelimit-policy' || true

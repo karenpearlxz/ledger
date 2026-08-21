@@ -94,3 +94,21 @@ export function paycheckSchedule({ anchorIso, frequency, fromIso, count = 4 }) {
 /** Monthly cost of an amount charged at `frequency`. */
 export const monthlyFromPeriodic = (amount, frequency) =>
   (Number(amount) || 0) * (PERIODS_PER_YEAR[frequency] || 12) / 12;
+
+/**
+ * The salary rate in force on `iso`: the most recent rate whose effectiveFrom
+ * is on or before that date. `rates` must be sorted newest-first.
+ *
+ * A date earlier than every recorded rate falls back to the current income
+ * setting, which is the pre-history behaviour. That is a deliberate footgun to
+ * be aware of: if she only records the NEW rate, older cheques still show the
+ * new amount until she either records the old rate too or overrides them.
+ */
+export function rateOn(iso, rates, fallbackUsd) {
+  for (const r of rates) {
+    if (compare(r.effectiveFrom, iso) <= 0) {
+      return { amountUsd: Number(r.amountUsd), effectiveFrom: r.effectiveFrom, note: r.note || '' };
+    }
+  }
+  return { amountUsd: Number(fallbackUsd) || 0, effectiveFrom: null, note: '' };
+}
