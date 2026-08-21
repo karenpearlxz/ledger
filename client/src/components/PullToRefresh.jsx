@@ -84,7 +84,7 @@ export default function PullToRefresh({ onRefresh, children }) {
       </div>
       <div style={{ 
         transform: `translateY(${pullDistance > 0 && !refreshing ? pullDistance * 0.3 : 0}px)`,
-        transition: pulling.current ? 'none' : 'transform 0.2s ease-out'
+        transition: pulling.current ? 'none' : 'transform 0.4s cubic-bezier(0.2, 0.8, 0.25, 1)'
       }}>
         {children}
       </div>

@@ -509,7 +509,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  transition: height 0.2s ease-out, opacity 0.15s ease;
+  transition: height 0.35s cubic-bezier(0.2, 0.8, 0.25, 1), opacity 0.15s ease;
 }
 
 .ptr-spinner {
@@ -518,7 +518,7 @@
 }
 
 .ptr-spinner.spinning {
-  animation: ptr-spin 0.75s linear infinite;
+  animation: ptr-spin 1s ease-in-out infinite;
 }
 
 @keyframes ptr-spin {
