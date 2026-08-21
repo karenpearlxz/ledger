@@ -200,11 +200,9 @@ export default function Bills() {
               <div className="min-w-0">
                 <p className="eyebrow mb-1">projected balance</p>
                 <p className="amount text-lg">
-                  {data?.netWorth != null && monthIncome != null
-                    ? peso(data.netWorth + monthIncome - (data?.totals?.monthlyFixed || 0))
-                    : '—'}
+                  {data?.projectedBalance != null ? peso(data.projectedBalance) : '—'}
                 </p>
-                <p className="text-xs text-mute mt-0.5">after this month</p>
+                <p className="text-xs text-mute mt-0.5">end of {fmtMonth(month).split(' ')[0].toLowerCase()}</p>
               </div>
             </div>
           </div>

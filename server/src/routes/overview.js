@@ -252,6 +252,41 @@ overviewRouter.get('/', route(async (req, res) => {
     return a + (r.currency === 'USD' ? (rate ? value * rate : 0) : value);
   }, 0));
 
+  // Cumulative balance projection: current balance + future income - unpaid bills
+  // from now through end of viewed month
+  const currentMonth = today.slice(0, 7);
+  let projectedBalance = null;
+  
+  if (rate !== null) {
+    const monthEndDate = addMonths(`${month}-01`, 1);
+    
+    // Get all expense payments from current month through viewed month
+    const allPayments = await many(
+      `select p.amount, p.paid_on, p.period, e.currency
+         from expense_payments p join expenses e on e.id = p.expense_id
+        where p.period >= $1::date and p.period < $2::date`,
+      [`${currentMonth}-01`, monthEndDate]
+    );
+    
+    // Calculate unpaid bills (not yet paid)
+    const unpaidBills = round2(allPayments
+      .filter(p => !p.paid_on)
+      .reduce((sum, p) => {
+        const php = p.currency === 'USD' ? (Number(p.amount) * rate) : Number(p.amount);
+        return sum + php;
+      }, 0));
+    
+    // Calculate all paychecks from today through end of viewed month
+    const futurePaychecks = paychecks
+      .filter(p => compare(p.payDate, today) >= 0 && compare(p.payDate, monthEndDate) < 0);
+    const futureIncome = round2(futurePaychecks.reduce((sum, p) => {
+      const { netPhp } = valueCheque(p.payDate);
+      return sum + (netPhp || 0);
+    }, 0));
+    
+    projectedBalance = round2(netWorth + futureIncome - unpaidBills);
+  }
+
   res.json({
     month,
     today,
@@ -278,6 +313,7 @@ overviewRouter.get('/', route(async (req, res) => {
       balancePhp: r.balance === null ? null : round2(toPhp(Number(r.balance), r.currency)),
     })),
     netWorth,
+    projectedBalance,
     goals: goals.map((g) => ({
       id: g.id, name: g.name, color: g.color, note: g.note,
       targetAmount: Number(g.target_amount), targetDate: isoDate(g.target_date),
