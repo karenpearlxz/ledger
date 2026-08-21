@@ -8,6 +8,33 @@ Karen's private finance tracker and life dashboard. Single user.
 - Live: https://warily-vigilantly-factual-catbird.kitten.space
 - Autostart: a line in `/.hako/init.sh` calls `server/scripts/restart.sh`
 
+## Vercel deployment
+
+### Setup
+1. Push to GitHub: `git push origin master`
+2. Import repo in Vercel dashboard
+3. Set environment variables (see below)
+4. Deploy
+
+### Environment variables (set in Vercel dashboard)
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | yes | Supabase connection string (use pooler for serverless) |
+| `JWT_SECRET` | yes | Random string for signing session cookies |
+| `LEDGER_PASSCODE` | yes | 8+ chars, the unlock passcode |
+| `DATABASE_SCHEMA` | no | Defaults to `ledger` |
+| `DATABASE_SSL` | no | Defaults to `1` (enabled) |
+| `APP_ORIGIN` | no | For CORS if needed |
+
+### How it works
+- `api/index.js` — Express app as Vercel serverless function
+- `client/dist/` — Static frontend served by Vercel CDN
+- `vercel.json` — Routes `/api/*` to serverless, everything else to SPA
+
+### Supabase connection for serverless
+Use the **pooler** connection string (port 6543) instead of direct (5432).
+In Supabase dashboard: Settings → Database → Connection string → URI (pooler mode).
+
 ## Database
 - Supabase project `onnkgvfrbppwdhbyrtba`, schema **`ledger`** only.
 - Nothing here reads or writes `public`, `reno` or any other schema. The pool
