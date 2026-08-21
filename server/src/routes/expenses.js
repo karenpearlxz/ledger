@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { many, one, query } from '../lib/db.js';
 import { addMonths, compare, dueDateFor, monthStart, todayISO } from '../lib/dates.js';
-import { ensurePeriod, ensureWindow, shapeExpense, shapePayment } from '../lib/finance.js';
+import { ensurePeriod, ensureWindow, monthlyEquivalent, shapeExpense, shapePayment } from '../lib/finance.js';
 import { badRequest, route } from '../lib/http.js';
 
 export const expensesRouter = express.Router();
@@ -13,6 +13,9 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const money = z.coerce.number().min(0).max(99_999_999).finite();
 
+/** Weekly and fortnightly costs have no one day of the month, so they spread. */
+const spreadOnly = (f) => f === 'weekly' || f === 'biweekly';
+
 const expenseBody = z.object({
   name: z.string().trim().min(1).max(80),
   amount: money,
@@ -20,6 +23,7 @@ const expenseBody = z.object({
   dueDay: z.coerce.number().int().min(1).max(31).nullable().optional(),
   category: z.string().trim().min(1).max(40).default('Other'),
   isRecurring: z.boolean().default(true),
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'quarterly', 'yearly']).default('monthly'),
   startDate: z.string().regex(DATE).optional(),
   endDate: z.string().regex(DATE).nullable().optional(),
   notes: z.string().max(500).default(''),
@@ -38,7 +42,7 @@ expensesRouter.post('/', route(async (req, res) => {
   if (!parsed.success) return badRequest(res, parsed);
   const b = parsed.data;
 
-  if (!b.isRecurring && !b.dueDay) {
+  if (!b.isRecurring && !b.dueDay && !spreadOnly(b.frequency)) {
     return res.status(400).json({ error: 'a one-off needs a day it falls on' });
   }
   if (b.endDate && b.startDate && compare(b.endDate, b.startDate) < 0) {
@@ -46,11 +50,11 @@ expensesRouter.post('/', route(async (req, res) => {
   }
 
   const row = await one(
-    `insert into expenses (name, amount, currency, due_day, category, is_recurring, start_date, end_date, notes, sort_order)
-          values ($1,$2,$3,$4,$5,$6, coalesce($7::date, current_date), $8, $9, coalesce($10, 100))
+    `insert into expenses (name, amount, currency, due_day, category, is_recurring, start_date, end_date, notes, sort_order, frequency)
+          values ($1,$2,$3,$4,$5,$6, coalesce($7::date, current_date), $8, $9, coalesce($10, 100), $11)
        returning *`,
-    [b.name, b.amount, b.currency, b.dueDay ?? null, b.category, b.isRecurring,
-      b.startDate ?? null, b.endDate ?? null, b.notes, b.sortOrder ?? null],
+    [b.name, b.amount, b.currency, spreadOnly(b.frequency) ? null : (b.dueDay ?? null), b.category, b.isRecurring,
+      b.startDate ?? null, b.endDate ?? null, b.notes, b.sortOrder ?? null, b.frequency],
   );
 
   await ensureWindow(todayISO());
@@ -72,6 +76,7 @@ expensesRouter.patch('/:id', route(async (req, res) => {
     dueDay: b.dueDay === undefined ? current.due_day : b.dueDay,
     category: b.category ?? current.category,
     isRecurring: b.isRecurring ?? current.is_recurring,
+    frequency: b.frequency ?? current.frequency ?? 'monthly',
     startDate: b.startDate ?? current.start_date.toISOString().slice(0, 10),
     endDate: b.endDate === undefined
       ? (current.end_date ? current.end_date.toISOString().slice(0, 10) : null)
@@ -80,7 +85,7 @@ expensesRouter.patch('/:id', route(async (req, res) => {
     sortOrder: b.sortOrder ?? current.sort_order,
   };
 
-  if (!merged.isRecurring && !merged.dueDay) {
+  if (!merged.isRecurring && !merged.dueDay && !spreadOnly(merged.frequency)) {
     return res.status(400).json({ error: 'a one-off needs a day it falls on' });
   }
   if (merged.endDate && compare(merged.endDate, merged.startDate) < 0) {
@@ -89,15 +94,22 @@ expensesRouter.patch('/:id', route(async (req, res) => {
 
   const row = await one(
     `update expenses set name=$2, amount=$3, currency=$4, due_day=$5, category=$6,
-            is_recurring=$7, start_date=$8, end_date=$9, notes=$10, sort_order=$11, updated_at=now()
+            is_recurring=$7, start_date=$8, end_date=$9, notes=$10, sort_order=$11,
+            frequency=$12, updated_at=now()
       where id=$1 returning *`,
-    [req.params.id, merged.name, merged.amount, merged.currency, merged.dueDay, merged.category,
-      merged.isRecurring, merged.startDate, merged.endDate, merged.notes, merged.sortOrder],
+    [req.params.id, merged.name, merged.amount, merged.currency,
+      spreadOnly(merged.frequency) ? null : merged.dueDay, merged.category,
+      merged.isRecurring, merged.startDate, merged.endDate, merged.notes, merged.sortOrder,
+      merged.frequency],
   );
 
   // Unreconciled future instances follow the definition; anything already
   // marked paid is history and is left exactly as it was.
   const today = todayISO();
+  // The instance carries the MONTHLY EQUIVALENT, never the raw occurrence.
+  // Writing merged.amount straight through collapsed a fortnightly ₱2,250 back
+  // to ₱2,250 for the month every time the expense was saved.
+  const monthlyAmount = monthlyEquivalent(merged.amount, merged.frequency);
   await query(
     `update expense_payments
         set amount = $2,
@@ -106,7 +118,7 @@ expensesRouter.patch('/:id', route(async (req, res) => {
                                  least($3::smallint, extract(day from (date_trunc('month', period) + interval '1 month - 1 day'))::int)) end,
             updated_at = now()
       where expense_id = $1 and paid_on is null and period >= date_trunc('month', $4::date)`,
-    [req.params.id, merged.amount, merged.dueDay, today],
+    [req.params.id, monthlyAmount, spreadOnly(merged.frequency) ? null : merged.dueDay, today],
   );
 
   res.json({ expense: shapeExpense(row) });

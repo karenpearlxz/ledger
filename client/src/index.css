@@ -238,14 +238,16 @@
   }
 
   /* iOS: a translucent bar behind the status area, because
-     black-translucent draws white glyphs that vanish on cream. */
+     black-translucent draws white glyphs that vanish on cream.
+     This was hardcoded to #14130f, which on a cream app IS the black bar it
+     was meant to prevent. It has to follow the theme. */
   .status-shade {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     height: env(safe-area-inset-top);
-    background: #14130f;
+    background: var(--paper);
     z-index: 60;
     pointer-events: none;
   }
@@ -294,7 +296,8 @@
 
   /* Nothing is anchored bottom-right on top of a row action anywhere in this
      app: page content simply ends above the tab bar. */
-  .page-bottom { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
+  /* 56px of tab + 1px border + breathing room, plus the home indicator. */
+  .page-bottom { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
 
   .sheet-backdrop {
     position: fixed;

@@ -29,6 +29,14 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
     const page = await ctx.newPage();
 
+    // A handler that throws produces NO network request and NO visible change,
+    // which reads in a test as "the feature is slow". `setData is not defined`
+    // shipped and broke ticking a bill entirely. Any uncaught error now fails
+    // the run on its own.
+    const pageErrors = [];
+    page.on('pageerror', (e) => pageErrors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') pageErrors.push(`console: ${m.text()}`); });
+
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.fill('input[type="password"]', PASSCODE);
     await page.press('input[type="password"]', 'Enter');
@@ -106,21 +114,29 @@ async function main() {
     });
 
     const row = page.locator('li', { hasText: FIXTURE }).first();
-    const tick = row.locator('button').first();
+    const tick = row.locator('button[aria-pressed]').first();
+    // aria-pressed is the actual state. Matching the word "paid" in innerHTML
+    // hit the button's own aria-label ("Mark X paid") and passed regardless of
+    // whether anything happened at all.
+    const pressed = () => tick.getAttribute('aria-pressed');
+    ok('5.0 the fixture starts unpaid', (await pressed()) === 'false');
+
     const t0 = Date.now();
+    const settled = page.waitForResponse((r) => r.url().includes('/api/expenses/payments/'));
     await tick.click();
-    // Wait for the row to look paid, with a budget far below the stalled request.
     let flipped = false;
     for (let i = 0; i < 40; i += 1) {
-      const state = await row.evaluate((el) => el.innerHTML);
-      if (/line-through|paid/i.test(state)) { flipped = true; break; }
+      if ((await pressed()) === 'true') { flipped = true; break; }
       await page.waitForTimeout(25);
     }
     const elapsed = Date.now() - t0;
     ok('5.1 the row flips before the server answers', flipped && elapsed < 1500, `${elapsed}ms`);
 
+    // Let the held request finish BEFORE unrouting; unrouting mid-flight can
+    // abort it, which looked like "the tick never persisted".
+    await settled;
     await page.unroute('**/api/expenses/payments/**');
-    await page.waitForTimeout(3000); // let the held request land
+    await page.waitForTimeout(500);
 
     const persisted = await page.evaluate((name) => fetch('/api/finance', { credentials: 'same-origin' })
       .then((r) => r.json())
@@ -132,9 +148,9 @@ async function main() {
       status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'nope' }),
     }));
     await tick.click();
-    await page.waitForTimeout(1200);
-    const reverted = await row.evaluate((el) => el.innerHTML);
-    ok('5.3 a failed tick is put back', /line-through|paid/i.test(reverted), 'row should still read paid');
+    await page.waitForTimeout(1500);
+    ok('5.3 a failed tick is put back', (await pressed()) === 'true',
+      'it should snap back to paid after the server refuses');
     await page.unroute('**/api/expenses/payments/**');
 
     // ---- 6. edit sheet scrolls -------------------------------------------
@@ -173,7 +189,7 @@ async function main() {
     // The Notes field must be reachable by scrolling the body.
     const notesReachable = await page.evaluate(() => {
       const body = document.querySelector('.sheet-body');
-      const notes = document.querySelector('.sheet textarea, .sheet #e-notes');
+      const notes = document.querySelector('.sheet #ex-notes');
       if (!body || !notes) return { found: false };
       body.scrollTop = body.scrollHeight;
       const r = notes.getBoundingClientRect();
@@ -220,6 +236,8 @@ async function main() {
     await page.click(`${nav} a[href="/bills"]`);
     await page.waitForSelector('text=left after bills', { timeout: 20000 });
     await page.screenshot({ path: '/home/kit/ledger/shots/ux-bills-390.png', fullPage: true });
+    const realErrors = pageErrors.filter((m) => !/50\d|Failed to load resource|nope/i.test(m));
+    ok('9.1 no uncaught errors during the sweep', realErrors.length === 0, realErrors.join(' | '));
   } finally {
     for (const fn of cleanup.reverse()) {
       try { await fn(); } catch (err) { console.log(`  cleanup warning: ${err.message}`); }

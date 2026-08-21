@@ -9,6 +9,8 @@ export const shapeExpense = (r) => ({
   dueDay: r.due_day === null ? null : Number(r.due_day),
   category: r.category,
   isRecurring: r.is_recurring,
+  frequency: r.frequency ?? 'monthly',
+  monthlyPhp: monthlyEquivalent(Number(r.amount), r.frequency ?? 'monthly'),
   startDate: r.start_date ? r.start_date.toISOString().slice(0, 10) : null,
   endDate: r.end_date ? r.end_date.toISOString().slice(0, 10) : null,
   notes: r.notes,
@@ -25,7 +27,34 @@ export const shapePayment = (r) => ({
   paidOn: r.paid_on ? r.paid_on.toISOString().slice(0, 10) : null,
   paidAmount: r.paid_amount === null ? null : Number(r.paid_amount),
   notes: r.notes,
+  // Definition fields, so editing a bill edits the expense behind it and not
+  // the materialised monthly figure.
+  frequency: r.frequency ?? 'monthly',
+  baseAmount: r.base_amount === undefined || r.base_amount === null ? undefined : Number(r.base_amount),
+  isRecurring: r.is_recurring === undefined ? undefined : r.is_recurring,
+  endDate: r.end_date ? r.end_date.toISOString().slice(0, 10) : null,
 });
+
+/**
+ * How many times a year each cadence happens. `amount` on an expense is the
+ * cost of ONE occurrence, so a fortnightly bill is not the same size as a
+ * monthly one and must never be added up as if it were.
+ */
+export const PER_YEAR = { weekly: 52, biweekly: 26, monthly: 12, quarterly: 4, yearly: 1 };
+
+/**
+ * The monthly equivalent of one occurrence. Weekly and fortnightly costs are
+ * averaged over the year, because 4 payments some months and 5 in others is
+ * noise she cannot plan around. Quarterly and yearly costs are NOT averaged:
+ * they land whole, in the month they land, which is the thing that actually
+ * empties the account.
+ */
+export function monthlyEquivalent(amount, frequency = 'monthly') {
+  const n = Number(amount) || 0;
+  if (frequency === 'weekly') return Math.round((n * 52 / 12) * 100) / 100;
+  if (frequency === 'biweekly') return Math.round((n * 26 / 12) * 100) / 100;
+  return Math.round(n * 100) / 100;
+}
 
 /**
  * Creates the month's instances for every expense that applies, without ever
@@ -54,13 +83,24 @@ export async function ensurePeriod(monthIso) {
                         least(e.due_day::int,
                               extract(day from ($1::date + interval '1 month - 1 day'))::int))
             end as due_date,
-            e.amount
+            case e.frequency
+              when 'weekly'   then round(e.amount * 52 / 12.0, 2)
+              when 'biweekly' then round(e.amount * 26 / 12.0, 2)
+              else e.amount
+            end
        from expenses e
       where e.archived_at is null
         and e.start_date < ($1::date + interval '1 month')
         and (e.end_date is null or e.end_date >= $1::date)
         -- A one-off exists only in the month it was set for.
         and (e.is_recurring or date_trunc('month', e.start_date) = $1::date)
+        -- Quarterly and yearly costs exist only in the months they land in,
+        -- counted from the month they started.
+        and (e.frequency not in ('quarterly', 'yearly')
+             or mod(
+                  (extract(year from $1::date)::int * 12 + extract(month from $1::date)::int)
+                  - (extract(year from e.start_date)::int * 12 + extract(month from e.start_date)::int),
+                  case e.frequency when 'quarterly' then 3 else 12 end) = 0)
         -- Respect the last instalment even when the day clamps to month end.
         and (e.end_date is null or
              (case when e.due_day is null then $1::date

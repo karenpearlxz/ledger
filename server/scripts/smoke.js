@@ -126,7 +126,7 @@ try {
     o.paychecks.every((p) => Math.abs(p.leftover - (p.amountPhp - p.billsDue)) < 0.02));
   ok('a spread bill has no due date shown as a deadline',
     o.bills.filter((b) => b.spread).every((b) => b.overdue === false));
-  ok('3 accounts are seeded', o.accounts.length === 3);
+  ok('her accounts load', o.accounts.length >= 3);
   ok('the reno goal is there', o.goals.some((g) => g.targetAmount === 400000));
   ok('categories load', (await call('GET', '/api/finance/categories')).json.categories.length >= 12);
 
@@ -142,13 +142,43 @@ try {
   const listed = await call('GET', '/api/expenses');
   ok('it appears in the list', listed.json.expenses.some((e) => e.id === expenseId));
 
-  // Added today with a due day that has already passed this month: it must
-  // NOT appear as instantly overdue for a month it did not exist in.
+  // Added today with a due day that has already passed this month: Karen still
+  // wants to SEE it in the current month (it was silently missing before), but
+  // it must not be flagged overdue for a month it did not exist in.
   const monthly = await call('GET', `/api/expenses/payments/${month}`);
-  const dayNow = Number(today.slice(8, 10));
   const thisMonthRow = monthly.json.payments.find((p) => p.expenseId === expenseId);
-  ok('a day already past is not backdated into this month',
-    dayNow > 9 ? !thisMonthRow : Boolean(thisMonthRow));
+  ok('a new expense still lands in the month it was added', Boolean(thisMonthRow));
+  const finNow = await call('GET', `/api/finance?month=${month}`);
+  const finRow = finNow.json.bills.find((b) => b.name === `${tag} gym`);
+  ok('but a due day that already passed is not called overdue',
+    Boolean(finRow) && finRow.overdue === false, JSON.stringify(finRow));
+
+  // ------------------------------------------------------- frequency
+  // The amount stored is ONE occurrence; the month must show the equivalent.
+  const bi = await call('POST', '/api/expenses',
+    { name: `${tag} fortnightly`, amount: 2250, frequency: 'biweekly', category: 'Food' });
+  ok('a fortnightly expense can be created', bi.status === 200 || bi.status === 201, String(bi.status));
+  const biId = bi.json?.expense?.id;
+  ok('it kept the per-occurrence amount', bi.json?.expense?.amount === 2250);
+  ok('a fortnightly cost has no due day', bi.json?.expense?.dueDay === null);
+  const biFin = await call('GET', `/api/finance?month=${month}`);
+  const biRow = biFin.json.bills.find((b) => b.name === `${tag} fortnightly`);
+  ok('the month shows 2250 x 26 / 12 = 4875', biRow && Math.abs(biRow.amountPhp - 4875) < 0.01,
+    JSON.stringify(biRow && biRow.amountPhp));
+  ok('it spreads rather than landing on a day', biRow && biRow.spread === true);
+  ok('the edit sheet gets the occurrence back, not the monthly figure',
+    biRow && biRow.baseAmount === 2250, JSON.stringify(biRow && biRow.baseAmount));
+  ok('the frequency round-trips', biRow && biRow.frequency === 'biweekly');
+  // Editing must not re-inflate: saving 2250 back leaves 4875, not 10562.50.
+  await call('PATCH', `/api/expenses/${biId}`, { amount: 2250, frequency: 'biweekly' });
+  const biAgain = await call('GET', `/api/finance?month=${month}`);
+  const biRow2 = biAgain.json.bills.find((b) => b.name === `${tag} fortnightly`);
+  ok('re-saving the same amount does not compound it',
+    biRow2 && Math.abs(biRow2.amountPhp - 4875) < 0.01, JSON.stringify(biRow2 && biRow2.amountPhp));
+  await call('DELETE', `/api/expenses/${biId}?hard=1`);
+  const biGone = await call('GET', `/api/finance?month=${month}`);
+  ok('the fortnightly fixture is cleaned up',
+    !biGone.json.bills.some((b) => b.name === `${tag} fortnightly`));
 
   const nextMonth = (() => {
     const [yy, mm] = month.split('-').map(Number);

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 import { addDays, addMonths, daysInMonth, diffDays, dueDateFor, monthStart, todayISO } from '../src/lib/dates.js';
 import { monthlyFromPeriodic, nextPayday, paycheckSchedule } from '../src/lib/payroll.js';
+import { monthlyEquivalent } from '../src/lib/finance.js';
 
 let pass = 0; let fail = 0;
 const t = (name, fn) => {
@@ -85,6 +86,22 @@ t('Manila is a day ahead of UTC late in the evening', () => {
   assert.equal(todayISO('Asia/Manila', instant), '2026-08-22');
   assert.equal(todayISO('UTC', instant), '2026-08-21');
 });
+
+// ------------------------------------------------------------- frequency
+// `amount` is one occurrence. Treating a fortnightly cost as monthly hides a
+// whole extra payment a year, which is the entire reason the field exists.
+t('biweekly 2250 is 4875 a month', () => assert.equal(monthlyEquivalent(2250, 'biweekly'), 4875));
+t('weekly 1000 is 4333.33 a month', () => assert.equal(monthlyEquivalent(1000, 'weekly'), 4333.33));
+t('monthly is left alone', () => assert.equal(monthlyEquivalent(4500, 'monthly'), 4500));
+t('quarterly lands whole, not averaged', () => assert.equal(monthlyEquivalent(3000, 'quarterly'), 3000));
+t('yearly lands whole, not averaged', () => assert.equal(monthlyEquivalent(12000, 'yearly'), 12000));
+t('a year of fortnightly is 26 payments, not 24', () =>
+  assert.ok(Math.abs(monthlyEquivalent(2250, 'biweekly') * 12 - 2250 * 26) < 0.01));
+t('a year of weekly is 52 payments', () =>
+  assert.ok(Math.abs(monthlyEquivalent(1000, 'weekly') * 12 - 1000 * 52) < 0.5));
+t('4875 a month is 2250 a cheque', () =>
+  assert.equal(Math.round((4875 * 12 / 26) * 100) / 100, 2250));
+t('a zero amount stays zero', () => assert.equal(monthlyEquivalent(0, 'weekly'), 0));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

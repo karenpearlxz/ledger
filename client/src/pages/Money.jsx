@@ -6,18 +6,47 @@ import { api } from '../lib/api.js';
 import { dollar, fmtDate, fmtMonthShort, peso } from '../lib/format.js';
 import { useApp, useResource } from '../lib/store.jsx';
 
-function BalanceSheet({ account, onClose, onSaved }) {
+const KINDS = ['bank', 'ewallet', 'savings', 'cash', 'credit'];
+
+/** A few sensible accent colours, so she never has to think in hex. */
+const SWATCHES = [
+  { hex: '#2F5D50', name: 'teal' },
+  { hex: '#7C5CBF', name: 'purple' },
+  { hex: '#C4577F', name: 'pink' },
+  { hex: '#3B6EA8', name: 'blue' },
+  { hex: '#B08428', name: 'gold' },
+  { hex: '#9C4A3C', name: 'rust' },
+  { hex: '#4F7A3A', name: 'green' },
+  { hex: '#5C5A54', name: 'slate' },
+];
+
+/** One sheet for the whole account: balance, details, and removing it. */
+function AccountSheet({ account, onClose, onSaved }) {
+  const isNew = !account.id;
   const [amount, setAmount] = useState(account.balance ?? '');
+  const [name, setName] = useState(account.name ?? '');
+  const [kind, setKind] = useState(account.kind ?? 'savings');
+  const [color, setColor] = useState(account.color ?? '#7C5CBF');
+  const [note, setNote] = useState(account.note ?? '');
   const [busy, setBusy] = useState(false);
+  const [armed, setArmed] = useState(null);
   const { toast } = useApp();
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.put(`/accounts/${account.id}/balance`, { amount: Number(amount) });
+      const body = { name: name.trim(), kind, color, note: note.trim() };
+      const id = isNew
+        ? (await api.post('/accounts', { ...body, currency: 'PHP' })).account.id
+        : (await api.patch(`/accounts/${account.id}`, body), account.id);
+      // A blank balance on a new account means "not set yet", which is not
+      // the same as zero, so only send it when she actually typed something.
+      if (amount !== '' && Number(amount) !== account.balance) {
+        await api.put(`/accounts/${id}/balance`, { amount: Number(amount) });
+      }
       await onSaved();
-      toast(`${account.name} updated`);
+      toast(isNew ? `${body.name} added` : `${body.name} updated`);
       onClose();
     } catch (err) {
       toast(err.message, 'error');
@@ -25,26 +54,94 @@ function BalanceSheet({ account, onClose, onSaved }) {
     }
   }
 
+  async function remove() {
+    try {
+      await api.del(`/accounts/${account.id}`);
+      await onSaved();
+      toast(`${account.name} removed`);
+      onClose();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
   return (
     <Sheet
-      title={account.name}
-      subtitle={account.balanceAsOf ? `Last set ${fmtDate(account.balanceAsOf)}` : 'No balance recorded yet'}
+      title={isNew ? 'New account' : account.name}
+      subtitle={isNew
+        ? 'It joins the net worth total straight away.'
+        : (account.balanceAsOf ? `Balance last set ${fmtDate(account.balanceAsOf)}` : 'No balance recorded yet')}
       onClose={onClose}
+      footer={(
+        <div className="flex gap-2 justify-between items-center flex-wrap w-full">
+          {isNew
+            ? <span />
+            : <ConfirmButton label="Remove" onConfirm={remove} armed={armed} setArmed={setArmed} />}
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" form="account-form" className="btn btn-primary" disabled={busy}>
+              {busy ? 'Saving...' : (isNew ? 'Add account' : 'Save')}
+            </button>
+          </div>
+        </div>
+      )}
     >
-      <form onSubmit={submit} className="space-y-4">
+      <form id="account-form" onSubmit={submit} className="space-y-4">
         <div>
-          <label className="label" htmlFor="bal">Balance today ({account.currency})</label>
+          <label className="label" htmlFor="acc-name">Name</label>
+          <input
+            id="acc-name" className="field" value={name} maxLength={60} required
+            onChange={(e) => setName(e.target.value)} placeholder="Maya"
+          />
+        </div>
+
+        <div>
+          <label className="label" htmlFor="acc-kind">Type</label>
+          <select id="acc-kind" className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
+            {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <span className="label" id="acc-colour-label">Colour</span>
+          <div className="flex gap-2 flex-wrap mt-1" role="group" aria-labelledby="acc-colour-label">
+            {SWATCHES.map((sw) => (
+              <button
+                key={sw.hex}
+                type="button"
+                onClick={() => setColor(sw.hex)}
+                aria-label={sw.name}
+                aria-pressed={color.toLowerCase() === sw.hex.toLowerCase()}
+                className="rounded-full"
+                style={{
+                  width: 30, height: 30, background: sw.hex,
+                  outline: color.toLowerCase() === sw.hex.toLowerCase() ? '2px solid var(--ink)' : 'none',
+                  outlineOffset: 2,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="label" htmlFor="bal">
+            {isNew ? 'Starting balance (optional)' : 'Balance today (PHP)'}
+          </label>
           <input
             id="bal" className="field amount text-xl" inputMode="decimal" type="number" step="0.01"
-            value={amount} onChange={(e) => setAmount(e.target.value)} required
+            value={amount} onChange={(e) => setAmount(e.target.value)}
           />
           <p className="text-xs text-mute mt-1">
             Each save is a snapshot, so the net worth line builds itself over time.
           </p>
         </div>
-        <div className="flex gap-2 justify-end">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving...' : 'Save'}</button>
+
+        <div>
+          <label className="label" htmlFor="acc-note">Note</label>
+          <input
+            id="acc-note" className="field" value={note} maxLength={200}
+            onChange={(e) => setNote(e.target.value)} placeholder="savings"
+          />
         </div>
       </form>
     </Sheet>
@@ -153,9 +250,18 @@ export default function Money() {
       <section className="card p-6">
         <p className="eyebrow mb-1">net worth</p>
         <p className="font-display text-[2.5rem] leading-none">{peso(netWorth)}</p>
-        <p className="text-sm text-mute mt-1.5">
-          across {accounts.length} account{accounts.length === 1 ? '' : 's'}
-        </p>
+        <div className="flex items-center justify-between gap-3 mt-1.5">
+          <p className="text-sm text-mute">
+            across {accounts.length} account{accounts.length === 1 ? '' : 's'}
+          </p>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm shrink-0"
+            onClick={() => setBalancing({ kind: 'savings', color: '#7C5CBF', balance: '' })}
+          >
+            <PlusIcon width={15} height={15} /> Add account
+          </button>
+        </div>
 
         <hr className="rule my-5" />
 
@@ -251,7 +357,7 @@ export default function Money() {
       )}
 
       {balancing ? (
-        <BalanceSheet account={balancing} onClose={() => setBalancing(null)} onSaved={reload} />
+        <AccountSheet account={balancing} onClose={() => setBalancing(null)} onSaved={reload} />
       ) : null}
       {goaling ? (
         <GoalSheet

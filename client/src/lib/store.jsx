@@ -24,6 +24,13 @@ export function AppProvider({ children }) {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem(THEME_KEY, theme);
+    // Keep the iOS status bar and Android chrome in step with the theme. A
+    // fixed cream theme-color leaves a pale band above a dark app.
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      const paper = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim();
+      if (paper) meta.setAttribute('content', paper);
+    }
   }, [theme]);
 
   // A dropped session must also drop the cached copies, or the lock screen

@@ -69,12 +69,16 @@ overviewRouter.get('/', route(async (req, res) => {
 
   await ensureWindow(period, 3, 3);
 
-  const [income, fx, expenses, payments, accounts, goals, trend, salaryRates, overrideRows] = await Promise.all([
+  const [income, fx, expenses, payments, accounts, goals, trend, salaryRates, overrideRows, spanPayments] = await Promise.all([
     getSetting('income', { amountUsd: 0, frequency: 'biweekly', anchorPayday: today }),
     getRate(),
     many('select * from expenses where archived_at is null order by sort_order, lower(name)'),
     many(
-      `select p.*, e.name, e.category, e.currency, e.due_day, e.start_date
+      // e.amount is the cost of ONE occurrence; p.amount is the monthly
+      // equivalent. The edit sheet must round-trip the former, or a fortnightly
+      // cost gets saved back as its own monthly total and grows every time.
+      `select p.*, e.name, e.category, e.currency, e.due_day, e.start_date,
+              e.is_recurring, e.frequency, e.amount as base_amount, e.end_date
          from expense_payments p join expenses e on e.id = p.expense_id
         where p.period = $1::date
         order by (e.due_day is null), p.due_date, lower(e.name)`,
@@ -97,6 +101,17 @@ overviewRouter.get('/', route(async (req, res) => {
     ),
     listRates(),
     listOverrides(),
+    // The paycheck cards reach up to two months past the month being viewed.
+    // Scoring them against this month's rows alone made every cheque after the
+    // current one look like it covered nothing.
+    many(
+      `select p.*, e.name, e.currency, e.due_day
+         from expense_payments p join expenses e on e.id = p.expense_id
+        where p.period >= $1::date and p.period < ($1::date + interval '3 months')
+          and e.due_day is not null
+        order by p.due_date`,
+      [period],
+    ),
   ]);
 
   const rate = fx.rate;
@@ -117,6 +132,14 @@ overviewRouter.get('/', route(async (req, res) => {
       spread,
       paidOn: isoDate(p.paid_on),
       paidAmount: p.paid_amount === null ? null : Number(p.paid_amount),
+      // The definition behind this month's figure. `amount` above is the
+      // monthly equivalent; `baseAmount` is what one occurrence costs, which is
+      // what the edit sheet must show and send back.
+      frequency: p.frequency ?? 'monthly',
+      baseAmount: p.base_amount === null || p.base_amount === undefined
+        ? undefined : Number(p.base_amount),
+      isRecurring: p.is_recurring,
+      endDate: isoDate(p.end_date),
       // A bill cannot be late when it fell due before she started tracking it.
       // Adding a mid-month cost should not paint the month red.
       overdue: !p.paid_on && !spread && compare(due, today) < 0
@@ -174,7 +197,15 @@ overviewRouter.get('/', route(async (req, res) => {
     return { netUsd, netPhp, active, override };
   };
 
-  const dated = bills.filter((b) => !b.spread);
+  // Dated bills across the whole span, so a cheque landing next month is
+  // scored against next month's bills.
+  const dated = spanPayments.map((r) => ({
+    id: r.id,
+    name: r.name,
+    amountPhp: round2(toPhp(Number(r.amount), r.currency)),
+    dueDate: isoDate(r.due_date),
+    paidOn: isoDate(r.paid_on),
+  }));
   const paychecks = schedule.map((p, i) => {
     const covered = dated.filter((b) => compare(b.dueDate, p.coversFrom) >= 0
       && (!p.coversTo || compare(b.dueDate, p.coversTo) < 0));

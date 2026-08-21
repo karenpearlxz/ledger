@@ -17,6 +17,7 @@ function Stat({ label, value, tone, hint }) {
 
 function PaycheckCard({ p, today, highlight }) {
   const short = p.leftover !== null && p.leftover < 0;
+  const datedTotal = p.bills.reduce((a, b) => a + (b.amountPhp || 0), 0);
   return (
     <article
       className="card p-5 shrink-0 w-[280px] snap-start"
@@ -44,9 +45,26 @@ function PaycheckCard({ p, today, highlight }) {
 
       <hr className="rule my-4" />
 
+      {/* "Bills it covers" quietly included the spread share, so a cheque with
+          no dated bills showed a total AND "nothing falls in this window",
+          which reads as a contradiction. Show both parts. */}
       <dl className="space-y-1.5 text-sm">
+        {datedTotal > 0 ? (
+          <div className="flex justify-between gap-3">
+            <dt className="text-dim">Dated bills</dt>
+            <dd className="amount">{peso(datedTotal)}</dd>
+          </div>
+        ) : null}
+        {p.spreadShare > 0 ? (
+          <div className="flex justify-between gap-3">
+            <dt className="text-dim" title="Costs with no due date, split evenly across every paycheck">
+              Spread costs
+            </dt>
+            <dd className="amount">{peso(p.spreadShare)}</dd>
+          </div>
+        ) : null}
         <div className="flex justify-between gap-3">
-          <dt className="text-dim">Bills it covers</dt>
+          <dt className="text-dim">{datedTotal > 0 && p.spreadShare > 0 ? 'Total out' : 'Bills it covers'}</dt>
           <dd className="amount">{peso(p.billsDue)}</dd>
         </div>
         <div className="flex justify-between gap-3">
@@ -70,7 +88,11 @@ function PaycheckCard({ p, today, highlight }) {
           ) : null}
         </ul>
       ) : (
-        <p className="text-xs text-mute mt-3">Nothing dated falls in this window.</p>
+        <p className="text-xs text-mute mt-3">
+          {p.spreadShare > 0
+            ? 'No dated bills land here, only the spread share above.'
+            : 'Nothing falls in this window.'}
+        </p>
       )}
     </article>
   );
@@ -109,23 +131,46 @@ export default function Home() {
     .filter((b) => !b.paidOn && !b.spread && b.dueDate >= today)
     .slice(0, 5);
   const maxTrend = Math.max(1, ...trend.map((t) => t.spent));
+  const funded = (accounts ?? []).filter((a) => a.balance !== null && a.balance !== undefined);
+  const afterBills = (netWorth ?? 0) - totals.unpaid;
 
   return (
     <div className="space-y-5 enter">
       <section className="card p-6">
-        <p className="eyebrow mb-1">left this month after fixed costs</p>
-        <p className="font-display text-[2.75rem] leading-none">
-          {peso(totals.leftover)}
-        </p>
+        {/* This used to lead with income minus fixed costs, which is a
+            projection, not money she has. Lead with the real balances and
+            walk down to what survives this month's bills. */}
+        <p className="eyebrow mb-1">your cash now</p>
+        <p className="font-display text-[2.75rem] leading-none">{peso(netWorth)}</p>
         <p className="text-sm text-mute mt-1.5">
-          {peso(income.monthlyPhp)} in, {peso(totals.monthlyFixed)} committed
+          {funded.length
+            ? `across ${funded.map((a) => a.name).join(', ')}`
+            : 'set your balances under Money to see this'}
         </p>
+
+        <hr className="rule my-5" />
+
+        <dl className="space-y-2">
+          <div className="flex justify-between items-baseline gap-3">
+            <dt className="text-sm text-dim">Still owed this month</dt>
+            <dd className="amount" style={{ color: totals.unpaid > 0 ? 'var(--ember)' : 'var(--teal)' }}>
+              {totals.unpaid > 0 ? `−${peso(totals.unpaid)}` : peso(0)}
+            </dd>
+          </div>
+          <div className="flex justify-between items-baseline gap-3">
+            <dt className="text-sm">After bills</dt>
+            <dd className="amount text-lg font-semibold"
+              style={{ color: afterBills < 0 ? 'var(--ember)' : undefined }}>
+              {peso(afterBills)}
+            </dd>
+          </div>
+        </dl>
 
         <hr className="rule my-5" />
 
         <div className="flex flex-wrap gap-5">
           <Stat label="Paid so far" value={peso(totals.paid)} tone="var(--teal)" />
-          <Stat label="Still owed" value={peso(totals.unpaid)} />
+          <Stat label="Left after fixed costs" value={peso(totals.leftover)} hint="income minus commitments" />
           <Stat
             label="Rate"
             value={fx.rate ? `₱${fx.rate.toFixed(2)}` : '—'}

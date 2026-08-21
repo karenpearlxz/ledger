@@ -159,10 +159,10 @@ try {
 
   // ------------------------------------------------------------- 3. bills
   await page.click(`${NAVSEL} a[href="/bills"]`);
-  await page.waitForSelector('text=still to pay', { timeout: 15000 });
+  await page.waitForSelector('text=/coming in/i', { timeout: 15000 });
   await settle(page);
   const billsText = (await page.innerText('main')).toLowerCase();
-  ok('3.1 the bills page loads', billsText.includes('still to pay'), billsText.slice(0, 80));
+  ok('3.1 the bills page loads', billsText.includes('coming in'), billsText.slice(0, 80));
   ok('3.2 her seeded bills are listed', (await page.innerText('main')).includes('Car loan'));
   ok('3.3 spread costs are separated out',
     (await page.innerText('main')).includes('Spread across the month'));
@@ -178,11 +178,15 @@ try {
   await page.click('.sheet button[type=submit]');
   await page.waitForSelector('.sheet', { state: 'detached', timeout: 15000 });
 
-  // The 1st has already gone this month, and the app deliberately refuses to
-  // backdate a new bill into a month it would read as instantly overdue in.
-  // So it belongs to next month, which is where the rest of this runs.
-  ok('3.4a a new bill is not backdated into this month',
-    !(await page.innerText('main')).includes(`${FIX} netflix`));
+  // A cost added mid-month belongs to that month, even if its day has passed:
+  // leaving it out understated the month. It must not be called overdue,
+  // though, since it cannot be late for a month it did not exist in.
+  ok('3.4a a new bill lands in the month it was added',
+    (await page.innerText('main')).includes(`${FIX} netflix`));
+  ok('3.4b but it is not flagged overdue', await page.evaluate((name) => {
+    const li = [...document.querySelectorAll('li')].find((n) => n.innerText.includes(name));
+    return li ? !/overdue/i.test(li.innerText) : false;
+  }, `${FIX} netflix`));
   await page.click('button[aria-label="Next month"]');
   await page.waitForSelector(`text=${FIX} netflix`, { timeout: 15000 });
   ok('3.4 an expense can be added from the UI', await page.isVisible(`text=${FIX} netflix`));
@@ -345,14 +349,25 @@ try {
   await page.click(`${NAVSEL} a[href="/figures"]`);
   await page.waitForSelector('input[type=search]', { timeout: 15000 });
   await page.waitForFunction(() => document.querySelectorAll('ul > li').length > 40, { timeout: 20000 });
-  ok('6.1 all 48 figures are listed', (await page.$$('ul > li')).length === 48);
-  ok('6.2 the newest is first', (await page.innerText('ul > li:first-child')).includes('Aphra Behn'));
+  const figApi = await page.request.fetch(`${BASE}/api/content/figures`);
+  const figJson = await figApi.json();
+  const expectedFigures = figJson.figures.length;
+  ok(`6.1 all ${expectedFigures} figures are listed`,
+    (await page.$$('ul > li')).length === expectedFigures,
+    `dom ${(await page.$$('ul > li')).length} vs api ${expectedFigures}`);
+  ok('6.2 the newest is first',
+    (await page.innerText('ul > li:first-child')).includes(figJson.figures[0].name),
+    figJson.figures[0].name);
 
   await page.fill('input[type=search]', 'circe');
   await page.waitForFunction(() => document.querySelectorAll('ul > li').length === 1, { timeout: 10000 });
   ok('6.3 search narrows the list', (await page.innerText('ul > li')).includes('Circe'));
   await page.fill('input[type=search]', '');
-  await page.waitForFunction(() => document.querySelectorAll('ul > li').length === 48, { timeout: 10000 });
+  // Never hardcode the count: a figure is added most days and the suite would
+  // break every time. This is the second copy of that mistake in one file.
+  await page.waitForFunction(
+    (n) => document.querySelectorAll('ul > li').length === n,
+    expectedFigures, { timeout: 10000 });
 
   await page.click('ul > li:first-child button[aria-expanded]');
   await page.waitForSelector('.prose-import', { timeout: 20000 });
@@ -578,7 +593,7 @@ try {
   ok('12.6 rail links are not covered by anything', railHit);
   await shot(dpage, '11-home-desktop');
   await dpage.click(`${NAVSEL} a[href="/bills"]`);
-  await dpage.waitForSelector('text=still to pay', { timeout: 15000 });
+  await dpage.waitForSelector('text=/coming in/i', { timeout: 15000 });
   await settle(dpage);
   await shot(dpage, '12-bills-desktop');
   await dpage.click(`${NAVSEL} a[href="/figures"]`);

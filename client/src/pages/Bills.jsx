@@ -53,7 +53,7 @@ export default function Bills() {
   const [month, setMonth] = useState(thisMonth);
   const [editing, setEditing] = useState(null);
   const [view, setView] = useState('list');
-  const { data, loading, error, reload } = useResource(`/finance?month=${month}`, [month]);
+  const { data, loading, error, reload, setData } = useResource(`/finance?month=${month}`, [month]);
 
   // Ticking a bill used to wait on a round trip before anything moved, which
   // on a phone feels broken. Move the UI first, then confirm; put it back if
@@ -258,10 +258,11 @@ export default function Bills() {
             id: editing.expenseId || editing.id,
             expenseId: editing.expenseId,
             name: editing.name ?? '',
-            amount: editing.amount ?? '',
+            amount: editing.baseAmount ?? editing.amount ?? '',
             category: editing.category ?? 'Other',
             dueDay: editing.spread ? '' : (editing.dueDate ? Number(editing.dueDate.slice(8, 10)) : ''),
             isRecurring: editing.isRecurring ?? true,
+            frequency: editing.frequency ?? 'monthly',
             notes: editing.notes ?? '',
             endDate: editing.endDate ?? '',
           }}
