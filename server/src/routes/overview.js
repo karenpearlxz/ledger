@@ -74,7 +74,7 @@ overviewRouter.get('/', route(async (req, res) => {
     getRate(),
     many('select * from expenses where archived_at is null order by sort_order, lower(name)'),
     many(
-      `select p.*, e.name, e.category, e.currency, e.due_day
+      `select p.*, e.name, e.category, e.currency, e.due_day, e.start_date
          from expense_payments p join expenses e on e.id = p.expense_id
         where p.period = $1::date
         order by (e.due_day is null), p.due_date, lower(e.name)`,
@@ -117,7 +117,10 @@ overviewRouter.get('/', route(async (req, res) => {
       spread,
       paidOn: isoDate(p.paid_on),
       paidAmount: p.paid_amount === null ? null : Number(p.paid_amount),
-      overdue: !p.paid_on && !spread && compare(due, today) < 0,
+      // A bill cannot be late when it fell due before she started tracking it.
+      // Adding a mid-month cost should not paint the month red.
+      overdue: !p.paid_on && !spread && compare(due, today) < 0
+        && compare(due, isoDate(p.start_date)) >= 0,
     };
   });
 
@@ -148,16 +151,15 @@ overviewRouter.get('/', route(async (req, res) => {
     payDate: isoDate(r.pay_date), amount: Number(r.amount), currency: r.currency, note: r.note,
   }]));
 
-  const dated = bills.filter((b) => !b.spread);
-  const paychecks = schedule.map((p, i) => {
-    const covered = dated.filter((b) => compare(b.dueDate, p.coversFrom) >= 0
-      && (!p.coversTo || compare(b.dueDate, p.coversTo) < 0));
-    const due = round2(covered.reduce((a, b) => a + (b.amountPhp || 0), 0) + spreadPerCheque);
-    const active = rateOn(p.payDate, rates, income.amountUsd);
-    const override = overrides.get(p.payDate) || null;
-
-    // A PHP override is taken at face value and never re-converted: she already
-    // holds those pesos, so a moving FX rate must not rewrite history.
+  /**
+   * What one cheque is worth. An override is what she was ACTUALLY paid and
+   * wins over the rate. A peso override is taken at face value and never
+   * re-converted: she already holds those pesos, so a moving exchange rate
+   * must not rewrite history.
+   */
+  const valueCheque = (payDate) => {
+    const active = rateOn(payDate, rates, income.amountUsd);
+    const override = overrides.get(payDate) || null;
     let netUsd = active.amountUsd;
     let netPhp = rate ? round2(active.amountUsd * rate) : null;
     if (override) {
@@ -169,6 +171,15 @@ overviewRouter.get('/', route(async (req, res) => {
         netPhp = rate ? round2(override.amount * rate) : null;
       }
     }
+    return { netUsd, netPhp, active, override };
+  };
+
+  const dated = bills.filter((b) => !b.spread);
+  const paychecks = schedule.map((p, i) => {
+    const covered = dated.filter((b) => compare(b.dueDate, p.coversFrom) >= 0
+      && (!p.coversTo || compare(b.dueDate, p.coversTo) < 0));
+    const due = round2(covered.reduce((a, b) => a + (b.amountPhp || 0), 0) + spreadPerCheque);
+    const { netUsd, netPhp, active, override } = valueCheque(p.payDate);
 
     return {
       index: i,
@@ -188,6 +199,23 @@ overviewRouter.get('/', route(async (req, res) => {
     };
   });
 
+  // Paydays that actually land inside the month being viewed. The card strip
+  // above counts forward from today, which says nothing about a month she has
+  // navigated to, so the Bills page needs its own answer.
+  const monthEnd = addMonths(period, 1);
+  const monthPaychecks = paycheckSchedule({
+    anchorIso: income.anchorPayday, frequency: income.frequency, fromIso: period, count: 8,
+  })
+    .filter((p) => compare(p.payDate, period) >= 0 && compare(p.payDate, monthEnd) < 0)
+    .map((p) => {
+      const { netUsd, netPhp, override } = valueCheque(p.payDate);
+      return { payDate: p.payDate, amountUsd: netUsd, amountPhp: netPhp, overridden: Boolean(override) };
+    });
+
+  const monthIncome = monthPaychecks.every((p) => p.amountPhp === null)
+    ? null
+    : round2(monthPaychecks.reduce((a, p) => a + (p.amountPhp || 0), 0));
+
   const netWorth = round2(accounts.reduce((a, r) => {
     const value = r.balance === null ? 0 : Number(r.balance);
     return a + (r.currency === 'USD' ? (rate ? value * rate : 0) : value);
@@ -204,7 +232,12 @@ overviewRouter.get('/', route(async (req, res) => {
       unpaid: round2(monthlyFixed - paidTotal),
       overdueCount: bills.filter((b) => b.overdue).length,
       leftover: monthlyPhp === null ? null : round2(monthlyPhp - monthlyFixed),
+      // Actual cheques landing in THIS month, which is not the same as the
+      // averaged monthly figure: some months carry three paydays.
+      monthIncome,
+      monthLeft: monthIncome === null ? null : round2(monthIncome - monthlyFixed),
     },
+    monthPaychecks,
     bills,
     paychecks,
     accounts: accounts.map((r) => ({

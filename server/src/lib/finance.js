@@ -69,20 +69,40 @@ export async function ensurePeriod(monthIso) {
                                   least(e.due_day::int,
                                         extract(day from ($1::date + interval '1 month - 1 day'))::int))
               end) <= e.end_date)
-        -- Added mid-month with a day that has already gone: do not backdate it
-        -- into a month where it would read as instantly overdue.
-        and not (e.due_day is not null
-                 and date_trunc('month', e.start_date) = $1::date
-                 and make_date(extract(year from $1::date)::int,
-                               extract(month from $1::date)::int,
-                               least(e.due_day::int,
-                                     extract(day from ($1::date + interval '1 month - 1 day'))::int))
-                     < e.start_date)
+        -- Added mid-month with a day that has already gone by: it still belongs
+        -- to this month. She is adding a cost she already has, and leaving it
+        -- out silently understates the month. It is NOT flagged overdue, which
+        -- is handled where bills are shaped: a bill cannot be late when it
+        -- predates the day she started tracking it.
      on conflict (expense_id, period) do nothing`,
     [period],
   );
 
   return period;
+}
+
+/**
+ * Deletes payment rows that no longer belong: an expense given an end date, or
+ * archived, after its future months were already materialised.
+ *
+ * Only UNPAID rows. A paid row is history and reconciled; deleting it would
+ * quietly rewrite what she recorded actually happening.
+ */
+export async function prunePeriods() {
+  const { rowCount } = await query(
+    `delete from expense_payments p
+      using expenses e
+      where e.id = p.expense_id
+        and p.paid_on is null
+        and (
+             e.archived_at is not null
+          or e.start_date >= (p.period + interval '1 month')
+          or (e.end_date is not null and e.end_date < p.period)
+          or (e.end_date is not null and p.due_date > e.end_date)
+          or (not e.is_recurring and date_trunc('month', e.start_date) <> p.period)
+        )`,
+  );
+  return rowCount;
 }
 
 /** Ensures a window of months around today so calendars and trends are filled. */
@@ -91,6 +111,7 @@ export async function ensureWindow(centerMonthIso, back = 3, forward = 2) {
   for (let i = -back; i <= forward; i += 1) {
     await ensurePeriod(addMonths(center, i));
   }
+  await prunePeriods();
   return center;
 }
 

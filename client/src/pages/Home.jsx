@@ -31,6 +31,12 @@ function PaycheckCard({ p, today, highlight }) {
       <p className="text-xs text-mute mt-1">
         {dollar(p.amountUsd)} lands {fmtDate(p.payDate, { month: 'short', day: 'numeric', weekday: 'short' })}
       </p>
+      {p.overridden ? (
+        <p className="text-xs mt-1.5 truncate" style={{ color: 'var(--gold)' }}
+          title={p.override?.note || 'manually adjusted'}>
+          adjusted{p.override?.note ? ` · ${p.override.note}` : ''}
+        </p>
+      ) : null}
 
       <hr className="rule my-4" />
 

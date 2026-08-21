@@ -26,7 +26,9 @@ export function AppProvider({ children }) {
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  useEffect(() => onLocked(() => setUnlocked(false)), []);
+  // A dropped session must also drop the cached copies, or the lock screen
+  // would be sitting on top of her finances still held in memory.
+  useEffect(() => onLocked(() => { clearCache(); setUnlocked(false); }), []);
 
   useEffect(() => {
     api.get('/auth/me')
@@ -65,14 +67,37 @@ export function AppProvider({ children }) {
 }
 
 /**
- * Small fetch helper with a stable `reload`. `loading` stays true only on the
- * FIRST load so a refresh does not blank the screen; a cost tracker flashing
- * ₱0 reads as "you have nothing", which is worse than a stale number.
+ * Stale-while-revalidate cache, keyed by request path.
+ *
+ * Switching tabs used to refetch from scratch and show a skeleton every time,
+ * which made a five-screen app feel slow for no reason: the data she is about
+ * to see is almost always the data she just saw. Now the last response paints
+ * immediately and the network confirms it behind her.
+ *
+ * Held in memory only. Locking clears it, or the next person to open the app
+ * offline would read her finances straight out of the cache.
+ */
+const cache = new Map();
+
+export const clearCache = () => cache.clear();
+
+/** Drop cached entries whose path starts with `prefix`. */
+export function invalidate(prefix) {
+  for (const key of [...cache.keys()]) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
+}
+
+/**
+ * Small fetch helper with a stable `reload`. `loading` is true only when there
+ * is nothing at all to show; a cached copy paints instantly and is refreshed in
+ * the background. A cost tracker flashing ₱0 reads as "you have nothing", which
+ * is worse than a number a few seconds old.
  */
 export function useResource(path, deps = []) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(() => (cache.has(path) ? cache.get(path) : null));
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cache.has(path));
   const alive = useRef(true);
   // Responses can land out of order. Switching month fires a new request while
   // the previous one is still in flight, and the slower old response would
@@ -85,6 +110,7 @@ export function useResource(path, deps = []) {
     const ticket = ++seq.current;
     try {
       const result = await api.get(path);
+      cache.set(path, result);
       if (!alive.current || ticket !== seq.current) return result;
       setData(result);
       setError(null);
@@ -99,10 +125,27 @@ export function useResource(path, deps = []) {
 
   useEffect(() => {
     alive.current = true;
-    setLoading(true);
+    // Paint whatever we already hold for this exact path, then revalidate.
+    if (cache.has(path)) {
+      setData(cache.get(path));
+      setLoading(false);
+    } else {
+      setData(null);
+      setLoading(true);
+    }
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps.length ? deps : [path]);
 
-  return { data, error, loading, reload, setData };
+  // An optimistic update has to reach the cache too, or navigating away and
+  // back would resurrect the pre-update copy from memory.
+  const setDataCached = useCallback((next) => {
+    setData((prev) => {
+      const value = typeof next === 'function' ? next(prev) : next;
+      if (value !== null && value !== undefined) cache.set(path, value);
+      return value;
+    });
+  }, [path]);
+
+  return { data, error, loading, reload, setData: setDataCached };
 }

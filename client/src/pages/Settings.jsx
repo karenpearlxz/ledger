@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 
+import SalaryHistory from '../components/SalaryHistory.jsx';
 import { Skeleton } from '../components/ui.jsx';
 import { api } from '../lib/api.js';
 import { dollar, fmtDate, peso } from '../lib/format.js';
-import { useApp, useResource } from '../lib/store.jsx';
+import { clearCache, useApp, useResource } from '../lib/store.jsx';
 
 const FREQUENCIES = [
   ['biweekly', 'Every two weeks'],
@@ -67,6 +68,7 @@ export default function Settings() {
       // Drop the offline copy of her data too, or locking would hide the app
       // while leaving her figures and finances readable with the network off.
       navigator.serviceWorker?.controller?.postMessage({ type: 'ledger:purge' });
+      clearCache();
       setUnlocked(false);
     }
   }
@@ -115,6 +117,8 @@ export default function Settings() {
           </div>
         </form>
       ) : null}
+
+      <SalaryHistory paychecks={data.paychecks || []} onChanged={reload} />
 
       <section className="card p-5">
         <h2 className="text-xl mb-1">Exchange rate</h2>
