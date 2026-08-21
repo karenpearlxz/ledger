@@ -6,6 +6,16 @@ import { api } from '../lib/api.js';
 import { dollar, fmtDate, peso } from '../lib/format.js';
 import { clearCache, useApp, useResource } from '../lib/store.jsx';
 
+// PWA install prompt
+let deferredPrompt = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    window.dispatchEvent(new Event('pwainstallable'));
+  });
+}
+
 const FREQUENCIES = [
   ['biweekly', 'Every two weeks'],
   ['weekly', 'Every week'],
@@ -19,6 +29,19 @@ export default function Settings() {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [rateBusy, setRateBusy] = useState(false);
+  const [canInstall, setCanInstall] = useState(!!deferredPrompt);
+  const [isInstalled, setIsInstalled] = useState(false);
+
+  useEffect(() => {
+    // Check if already installed
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+      setIsInstalled(true);
+    }
+    // Listen for install prompt becoming available
+    const handler = () => setCanInstall(true);
+    window.addEventListener('pwainstallable', handler);
+    return () => window.removeEventListener('pwainstallable', handler);
+  }, []);
 
   useEffect(() => {
     if (data?.income && !form) {
@@ -70,6 +93,22 @@ export default function Settings() {
       navigator.serviceWorker?.controller?.postMessage({ type: 'ledger:purge' });
       clearCache();
       setUnlocked(false);
+    }
+  }
+
+  async function installApp() {
+    if (!deferredPrompt) return;
+    try {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setCanInstall(false);
+        setIsInstalled(true);
+        toast('App installed!');
+      }
+      deferredPrompt = null;
+    } catch (err) {
+      toast('Could not install', 'error');
     }
   }
 
@@ -141,6 +180,29 @@ export default function Settings() {
         <button type="button" className="btn btn-ghost" onClick={toggleTheme}>
           {theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
         </button>
+      </section>
+
+      <section className="card p-5">
+        <h2 className="text-xl mb-1">Install app</h2>
+        {isInstalled ? (
+          <p className="text-sm text-dim mt-3">Already installed as an app ✓</p>
+        ) : canInstall ? (
+          <>
+            <p className="text-sm text-mute mb-4">Add Ledger to your dock for quick access.</p>
+            <button type="button" className="btn btn-ghost" onClick={installApp}>
+              Install Ledger
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-mute mt-3">
+              On Mac, use Chrome or Edge and click the install icon in the address bar.
+            </p>
+            <p className="text-sm text-mute mt-2">
+              On iPhone/iPad, tap Share → Add to Home Screen.
+            </p>
+          </>
+        )}
       </section>
 
       <section className="card p-5">
