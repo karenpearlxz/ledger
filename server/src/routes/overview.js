@@ -276,8 +276,18 @@ overviewRouter.get('/', route(async (req, res) => {
         return sum + php;
       }, 0));
     
+    // Generate enough paychecks to cover from today to end of viewed month
+    // Estimate: ~3 paychecks per month for biweekly, generate extra to be safe
+    const monthsAhead = Math.max(1, Math.ceil((new Date(monthEndDate) - new Date(today)) / (30 * 24 * 60 * 60 * 1000)));
+    const projectionPaychecks = paycheckSchedule({
+      anchorIso: income.anchorPayday,
+      frequency: income.frequency,
+      fromIso: today,
+      count: Math.max(4, monthsAhead * 3),
+    });
+    
     // Calculate all paychecks from today through end of viewed month
-    const futurePaychecks = paychecks
+    const futurePaychecks = projectionPaychecks
       .filter(p => compare(p.payDate, today) >= 0 && compare(p.payDate, monthEndDate) < 0);
     const futureIncome = round2(futurePaychecks.reduce((sum, p) => {
       const { netPhp } = valueCheque(p.payDate);
