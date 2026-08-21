@@ -1,0 +1,31 @@
+{
+  "name": "ledger",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/src/dev.js",
+    "dev": "node server/src/dev.js",
+    "migrate": "node server/scripts/migrate.js",
+    "build": "npm --prefix client install --no-audit --no-fund && NODE_ENV=production npm --prefix client run build",
+    "check": "node --check server/src/app.js && node --check server/src/dev.js",
+    "restart": "bash server/scripts/restart.sh",
+    "smoke": "node server/scripts/smoke.js",
+    "import": "python3 scripts/import-dashboard.py",
+    "seed": "node server/scripts/seed-content.js",
+    "ui": "node server/scripts/ui-check.js",
+    "icons": "python3 scripts/make-icons.py"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jose": "^6.1.0",
+    "pg": "^8.16.3",
+    "zod": "^4.1.13"
+  }
+}

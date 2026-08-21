@@ -1,0 +1,197 @@
+import express from 'express';
+import { z } from 'zod';
+
+import { many, one } from '../lib/db.js';
+import { addMonths, compare, monthStart, todayISO } from '../lib/dates.js';
+import { ensureWindow, getSetting, putSetting } from '../lib/finance.js';
+import { getRate } from '../lib/fx.js';
+import { badRequest, isoDate, route } from '../lib/http.js';
+import { FREQUENCIES, monthlyFromPeriodic, paycheckSchedule } from '../lib/payroll.js';
+
+export const overviewRouter = express.Router();
+
+const MONTH = /^\d{4}-\d{2}$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const incomeBody = z.object({
+  amountUsd: z.coerce.number().min(0).max(1_000_000).finite(),
+  frequency: z.enum(FREQUENCIES),
+  anchorPayday: z.string().regex(DATE),
+});
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+overviewRouter.get('/fx', route(async (req, res) => {
+  res.json(await getRate({ force: req.query.refresh === '1' }));
+}));
+
+overviewRouter.get('/income', route(async (_req, res) => {
+  res.json({ income: await getSetting('income', { amountUsd: 0, frequency: 'biweekly', anchorPayday: todayISO() }) });
+}));
+
+overviewRouter.put('/income', route(async (req, res) => {
+  const parsed = incomeBody.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed);
+  res.json({ income: await putSetting('income', parsed.data) });
+}));
+
+overviewRouter.get('/categories', route(async (_req, res) => {
+  const rows = await many('select name, color, kind from categories order by kind, sort_order, lower(name)');
+  res.json({ categories: rows });
+}));
+
+overviewRouter.post('/categories', route(async (req, res) => {
+  const parsed = z.object({
+    name: z.string().trim().min(1).max(40),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#A8B0AE'),
+    kind: z.enum(['expense', 'income']).default('expense'),
+  }).safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed);
+  const b = parsed.data;
+  const row = await one(
+    `insert into categories (name, color, kind) values ($1,$2,$3)
+     on conflict (name_lower) do update set color = excluded.color
+     returning name, color, kind`,
+    [b.name, b.color, b.kind],
+  );
+  res.status(201).json({ category: row });
+}));
+
+/**
+ * Everything the home screen needs, in one round trip. The paycheck section is
+ * the point of the app: which bills does each cheque actually have to cover.
+ */
+overviewRouter.get('/', route(async (req, res) => {
+  const month = MONTH.test(String(req.query.month || '')) ? String(req.query.month) : todayISO().slice(0, 7);
+  const period = `${month}-01`;
+  const today = todayISO();
+
+  await ensureWindow(period, 3, 3);
+
+  const [income, fx, expenses, payments, accounts, goals, trend] = await Promise.all([
+    getSetting('income', { amountUsd: 0, frequency: 'biweekly', anchorPayday: today }),
+    getRate(),
+    many('select * from expenses where archived_at is null order by sort_order, lower(name)'),
+    many(
+      `select p.*, e.name, e.category, e.currency, e.due_day
+         from expense_payments p join expenses e on e.id = p.expense_id
+        where p.period = $1::date
+        order by (e.due_day is null), p.due_date, lower(e.name)`,
+      [period],
+    ),
+    many(`select a.*, b.amount as balance, b.as_of as balance_as_of
+            from accounts a
+            left join lateral (select amount, as_of from balances
+                                where account_id = a.id order by as_of desc limit 1) b on true
+           where a.archived_at is null order by a.sort_order, lower(a.name)`),
+    many(`select g.*, coalesce(c.total, 0) as saved from goals g
+            left join (select goal_id, sum(amount) as total from goal_contributions group by goal_id) c
+              on c.goal_id = g.id
+           where g.archived_at is null order by g.sort_order, lower(g.name)`),
+    many(
+      `select to_char(date_trunc('month', on_date), 'YYYY-MM') as month,
+              sum(amount) filter (where kind = 'expense') as spent
+         from transactions where on_date >= $1::date group by 1 order by 1`,
+      [addMonths(period, -5)],
+    ),
+  ]);
+
+  const rate = fx.rate;
+  const toPhp = (amount, currency) => (currency === 'USD' ? (rate ? amount * rate : null) : amount);
+
+  const bills = payments.map((p) => {
+    const due = isoDate(p.due_date);
+    const spread = p.due_day === null;
+    return {
+      id: p.id,
+      expenseId: p.expense_id,
+      name: p.name,
+      category: p.category,
+      currency: p.currency,
+      amount: Number(p.amount),
+      amountPhp: round2(toPhp(Number(p.amount), p.currency)),
+      dueDate: due,
+      spread,
+      paidOn: isoDate(p.paid_on),
+      paidAmount: p.paid_amount === null ? null : Number(p.paid_amount),
+      overdue: !p.paid_on && !spread && compare(due, today) < 0,
+    };
+  });
+
+  const sum = (list) => round2(list.reduce((a, b) => a + (b.amountPhp || 0), 0));
+  const monthlyFixed = sum(bills);
+  const paidTotal = round2(bills.filter((b) => b.paidOn)
+    .reduce((a, b) => a + (b.paidAmount ?? b.amountPhp ?? 0), 0));
+
+  const perYear = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 }[income.frequency] || 26;
+  const monthlyUsd = round2(monthlyFromPeriodic(income.amountUsd, income.frequency));
+  const monthlyPhp = rate ? round2(monthlyUsd * rate) : null;
+
+  const schedule = paycheckSchedule({
+    anchorIso: income.anchorPayday, frequency: income.frequency, fromIso: today, count: 4,
+  });
+
+  // A spread cost has no due date, so it is charged evenly to every cheque
+  // rather than dumped on whichever one happens to contain the 1st.
+  const spreadMonthly = sum(bills.filter((b) => b.spread));
+  const spreadPerCheque = round2(spreadMonthly * 12 / perYear);
+
+  const dated = bills.filter((b) => !b.spread);
+  const paychecks = schedule.map((p, i) => {
+    const covered = dated.filter((b) => compare(b.dueDate, p.coversFrom) >= 0
+      && (!p.coversTo || compare(b.dueDate, p.coversTo) < 0));
+    const due = round2(covered.reduce((a, b) => a + (b.amountPhp || 0), 0) + spreadPerCheque);
+    const netPhp = rate ? round2(income.amountUsd * rate) : null;
+    return {
+      index: i,
+      payDate: p.payDate,
+      coversFrom: p.coversFrom,
+      coversTo: p.coversTo,
+      amountUsd: income.amountUsd,
+      amountPhp: netPhp,
+      billsDue: round2(due),
+      spreadShare: spreadPerCheque,
+      leftover: netPhp === null ? null : round2(netPhp - due),
+      bills: covered.map((b) => ({ id: b.id, name: b.name, amountPhp: b.amountPhp, dueDate: b.dueDate, paidOn: b.paidOn })),
+      isCurrent: compare(p.coversFrom, today) <= 0 && (!p.coversTo || compare(today, p.coversTo) < 0),
+    };
+  });
+
+  const netWorth = round2(accounts.reduce((a, r) => {
+    const value = r.balance === null ? 0 : Number(r.balance);
+    return a + (r.currency === 'USD' ? (rate ? value * rate : 0) : value);
+  }, 0));
+
+  res.json({
+    month,
+    today,
+    fx,
+    income: { ...income, monthlyUsd, monthlyPhp, perYear },
+    totals: {
+      monthlyFixed,
+      paid: paidTotal,
+      unpaid: round2(monthlyFixed - paidTotal),
+      overdueCount: bills.filter((b) => b.overdue).length,
+      leftover: monthlyPhp === null ? null : round2(monthlyPhp - monthlyFixed),
+    },
+    bills,
+    paychecks,
+    accounts: accounts.map((r) => ({
+      id: r.id, name: r.name, kind: r.kind, currency: r.currency, color: r.color, note: r.note,
+      balance: r.balance === null ? null : Number(r.balance),
+      balanceAsOf: isoDate(r.balance_as_of),
+      balancePhp: r.balance === null ? null : round2(toPhp(Number(r.balance), r.currency)),
+    })),
+    netWorth,
+    goals: goals.map((g) => ({
+      id: g.id, name: g.name, color: g.color, note: g.note,
+      targetAmount: Number(g.target_amount), targetDate: isoDate(g.target_date),
+      saved: Number(g.saved),
+      percent: Math.min(100, round2(Number(g.saved) / Number(g.target_amount) * 100)),
+    })),
+    trend: trend.map((r) => ({ month: r.month, spent: Number(r.spent || 0) })),
+    expenseCount: expenses.length,
+  });
+}));
+
+export { monthStart };
