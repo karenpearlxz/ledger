@@ -88,6 +88,14 @@ const cache = new Map();
 
 export const clearCache = () => cache.clear();
 
+// Global refresh triggers - components register their reload functions here
+const refreshCallbacks = new Set();
+export const registerRefresh = (fn) => { refreshCallbacks.add(fn); return () => refreshCallbacks.delete(fn); };
+export const refreshAll = async () => {
+  clearCache();
+  await Promise.all([...refreshCallbacks].map(fn => fn()));
+};
+
 /** Drop cached entries whose path starts with `prefix`. */
 export function invalidate(prefix) {
   for (const key of [...cache.keys()]) {

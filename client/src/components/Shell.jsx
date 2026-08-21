@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 
-import { useApp } from '../lib/store.jsx';
+import { refreshAll, useApp } from '../lib/store.jsx';
+import PullToRefresh from './PullToRefresh.jsx';
 import {
   BillsIcon, FiguresIcon, GearIcon, HomeIcon, MoonIcon, NotesIcon, SunIcon, WalletIcon,
 } from './icons.jsx';
@@ -85,7 +86,11 @@ export default function Shell({ children }) {
           </div>
         </header>
 
-        <main className="shell content pt-5 md:pt-10 page-bottom">{children}</main>
+        <main className="shell content pt-5 md:pt-10 page-bottom">
+          <PullToRefresh onRefresh={refreshAll}>
+            {children}
+          </PullToRefresh>
+        </main>
       </div>
 
       <nav className="tabbar md:hidden" aria-label="Sections">
