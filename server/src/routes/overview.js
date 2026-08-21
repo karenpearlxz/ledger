@@ -257,7 +257,7 @@ overviewRouter.get('/', route(async (req, res) => {
   const currentMonth = today.slice(0, 7);
   let projectedBalance = null;
   
-  if (rate !== null) {
+  if (rate) {
     const monthEndDate = addMonths(`${month}-01`, 1);
     
     // Get all expense payments from current month through viewed month
