@@ -198,11 +198,13 @@ export default function Bills() {
                 <p className="text-xs text-mute mt-0.5">{peso(unpaidTotal)} unpaid</p>
               </div>
               <div className="min-w-0">
-                <p className="eyebrow mb-1">total balance</p>
-                <p className="amount text-lg">{data?.netWorth != null ? peso(data.netWorth) : '—'}</p>
-                <p className="text-xs text-mute mt-0.5">
-                  {data?.accounts?.filter(a => a.balance != null).length || 0} accounts
+                <p className="eyebrow mb-1">projected balance</p>
+                <p className="amount text-lg">
+                  {data?.netWorth != null && monthIncome != null
+                    ? peso(data.netWorth + monthIncome - (data?.totals?.monthlyFixed || 0))
+                    : '—'}
                 </p>
+                <p className="text-xs text-mute mt-0.5">after this month</p>
               </div>
             </div>
           </div>
