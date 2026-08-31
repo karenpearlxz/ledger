@@ -46,17 +46,19 @@ expensesRouter.post('/', route(async (req, res) => {
   if (!b.isRecurring && !b.dueDay && !spreadOnly(b.frequency)) {
     return res.status(400).json({ error: 'a one-off needs a day it falls on' });
   }
-  const effectiveStart = b.startDate ?? todayISO();
+  // For one-time expenses with an endDate but no startDate, use endDate as startDate.
+  // This allows recording past expenses without a startDate field in the form.
+  const effectiveStart = b.startDate ?? (!b.isRecurring && b.endDate ? b.endDate : todayISO());
   if (b.endDate && compare(b.endDate, effectiveStart) < 0) {
     return res.status(400).json({ error: 'the end date is before the start date' });
   }
 
   const row = await one(
     `insert into expenses (name, amount, currency, due_day, category, is_recurring, start_date, end_date, notes, sort_order, frequency, account_id)
-          values ($1,$2,$3,$4,$5,$6, coalesce($7::date, current_date), $8, $9, coalesce($10, 100), $11, $12)
+          values ($1,$2,$3,$4,$5,$6, $7::date, $8, $9, coalesce($10, 100), $11, $12)
        returning *`,
     [b.name, b.amount, b.currency, spreadOnly(b.frequency) ? null : (b.dueDay ?? null), b.category, b.isRecurring,
-      b.startDate ?? null, b.endDate ?? null, b.notes, b.sortOrder ?? null, b.frequency, b.accountId ?? null],
+      effectiveStart, b.endDate ?? null, b.notes, b.sortOrder ?? null, b.frequency, b.accountId ?? null],
   );
 
   await ensureWindow(todayISO());
