@@ -49,7 +49,7 @@ app.use(cookieParser());
 app.use(attachSession);
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'ledger', env: env.NODE_ENV, runtime: 'vercel' });
+  res.json({ ok: true, service: 'ledger', env: env.NODE_ENV, runtime: 'vercel', version: 'cf078fb' });
 });
 
 app.use('/api/auth', authRouter);
