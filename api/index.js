@@ -66,4 +66,10 @@ app.use('/api', (req, res) => {
   res.status(404).json({ error: `no route for ${req.method} ${req.originalUrl}` });
 });
 
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  console.error('[ledger] unhandled', err);
+  res.status(500).json({ error: err.message || 'something broke on our end' });
+});
+
 export default app;

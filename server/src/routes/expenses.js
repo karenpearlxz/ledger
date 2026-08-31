@@ -46,7 +46,8 @@ expensesRouter.post('/', route(async (req, res) => {
   if (!b.isRecurring && !b.dueDay && !spreadOnly(b.frequency)) {
     return res.status(400).json({ error: 'a one-off needs a day it falls on' });
   }
-  if (b.endDate && b.startDate && compare(b.endDate, b.startDate) < 0) {
+  const effectiveStart = b.startDate ?? todayISO();
+  if (b.endDate && compare(b.endDate, effectiveStart) < 0) {
     return res.status(400).json({ error: 'the end date is before the start date' });
   }
 
