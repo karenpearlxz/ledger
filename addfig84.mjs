@@ -7,6 +7,7 @@ const sec=(title,content)=>`<div style="margin-bottom:28px"><h4 style="font-fami
 const bq=(text)=>`<blockquote style="border-left:3px solid var(--ember);padding-left:18px;color:var(--ink);line-height:1.8;font-size:0.95rem;margin:16px 0">${text}</blockquote>`;
 const esc=(s)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/--/g,'&mdash;');
 const poem=(f)=>bq(fs.readFileSync('/tmp/'+f,'utf8').trimEnd().split('\n').map(esc).join('<br>'));
+const h=(t)=>`<p style="margin-top:22px;font-style:italic;color:var(--teal)">${t}</p>`;
 const body =
 sec('childhood &amp; early life',
  p('<strong>John Keats</strong> was born on 31 October 1795 in Moorfields, London, the eldest son of Thomas Keats, who ran a livery stable at an inn called the Swan and Hoop. He was small, maybe five feet tall as a grown man, and at school in Enfield he was known less for books than for fighting. He would take on anyone, bigger boys included.')+
