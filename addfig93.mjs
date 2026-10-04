@@ -26,6 +26,5 @@ p('From Satires of Circumstance (1914), Project Gutenberg #2863. The first was w
 h('Channel Firing (April 1914)')+poem('ha.txt')+
 h('The Convergence of the Twain (lines on the loss of the Titanic)')+poem('hb.txt')+
 h('The Voice (December 1912)')+poem('hc.txt'));
-const r=await one(`insert into ledger.figures (ordinal,slug,name,epithet,lifespan,chip_date,summary,body,quote,quote_source) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning slug,ordinal`,
-[93,'thomas-hardy','Thomas Hardy','the man who wrote to his dead wife','1840 – 1928','oct 4, 2026','Declared dead at birth, he grew up to write Tess and Jude, quit novels after the outrage, and spent his last decades writing poems of guilt and longing to the wife he had stopped speaking to.',body,'Woman much missed, how you call to me, call to me','The Voice']);
+const r=await one(`update ledger.figures set body=$1 where slug=$2 returning slug`,[body,"thomas-hardy"]);
 console.log(r);process.exit();
