@@ -273,7 +273,7 @@
     bottom: 0;
     z-index: 50;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     padding-bottom: env(safe-area-inset-bottom);
     background: var(--paper);
     border-top: 1px solid var(--line);
@@ -285,11 +285,13 @@
     justify-content: center;
     gap: 3px;
     min-height: 56px;
-    font-size: 0.64rem;
-    letter-spacing: 0.06em;
+    font-size: 0.6875rem;
+    letter-spacing: 0.02em;
     text-transform: uppercase;
     color: var(--ink-mute);
     text-decoration: none;
+    min-width: 0;
+    white-space: nowrap;
   }
   .tabbar a[aria-current='page'] { color: var(--teal); }
   .tabbar a[aria-current='page'] svg { transform: translateY(-1px); }

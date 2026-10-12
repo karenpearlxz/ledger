@@ -17,6 +17,7 @@ import { salaryRouter } from './routes/salary.js';
 import { goalsRouter } from './routes/goals.js';
 import { overviewRouter } from './routes/overview.js';
 import { transactionsRouter } from './routes/transactions.js';
+import { swertresRouter } from './routes/swertres.js';
 
 export function createApp() {
   const app = express();
@@ -67,6 +68,7 @@ export function createApp() {
   app.use('/api/salary', requireSession, salaryRouter);
   app.use('/api/transactions', requireSession, transactionsRouter);
   app.use('/api/content', requireSession, contentRouter);
+  app.use('/api/swertres', requireSession, swertresRouter);
 
   app.use('/api', (req, res) => {
     res.status(404).json({ error: `no route for ${req.method} ${req.originalUrl}` });

@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { refreshAll, useApp } from '../lib/store.jsx';
 import PullToRefresh from './PullToRefresh.jsx';
 import {
-  BillsIcon, FiguresIcon, GearIcon, HomeIcon, MoonIcon, NotesIcon, SunIcon, WalletIcon,
+  BillsIcon, DiceIcon, FiguresIcon, GearIcon, HomeIcon, MoonIcon, NotesIcon, SunIcon, WalletIcon,
 } from './icons.jsx';
 import { Toasts } from './ui.jsx';
 
@@ -13,6 +13,7 @@ const TABS = [
   { to: '/money', label: 'Money', Icon: WalletIcon },
   { to: '/notes', label: 'Notes', Icon: NotesIcon },
   { to: '/figures', label: 'Figures', Icon: FiguresIcon },
+  { to: '/swertres', label: 'Swertres', Icon: DiceIcon },
 ];
 
 function ThemeButton({ compact }) {

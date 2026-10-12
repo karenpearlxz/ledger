@@ -8,6 +8,7 @@ import Home from './pages/Home.jsx';
 import Lock from './pages/Lock.jsx';
 import Money from './pages/Money.jsx';
 import Notes from './pages/Notes.jsx';
+import Swertres from './pages/Swertres.jsx';
 import Settings from './pages/Settings.jsx';
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/money" element={<Money />} />
         <Route path="/notes" element={<Notes />} />
         <Route path="/figures" element={<Figures />} />
+        <Route path="/swertres" element={<Swertres />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

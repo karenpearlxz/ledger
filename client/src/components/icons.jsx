@@ -43,3 +43,6 @@ export const ChevronIcon = (p) => (
 export const AlertIcon = (p) => (
   <svg {...base} {...p}><path d="M12 3.5 22 20H2z" /><path d="M12 10v4M12 17h.01" /></svg>
 );
+export const DiceIcon = (p) => (
+  <svg {...base} {...p}><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01" /></svg>
+);

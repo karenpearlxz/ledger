@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server/src/dev.js",
     "dev": "node server/src/dev.js",
@@ -15,9 +17,12 @@
     "import": "python3 scripts/import-dashboard.py",
     "seed": "node server/scripts/seed-content.js",
     "ui": "node server/scripts/ui-check.js",
-    "icons": "python3 scripts/make-icons.py"
+    "icons": "python3 scripts/make-icons.py",
+    "swertres": "node scripts/swertres-daily.js",
+    "test:swertres": "node --test scripts/tests/swertres.test.js"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
