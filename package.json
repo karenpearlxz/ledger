@@ -19,7 +19,8 @@
     "ui": "node server/scripts/ui-check.js",
     "icons": "python3 scripts/make-icons.py",
     "swertres": "node scripts/swertres-daily.js",
-    "test:swertres": "node --test scripts/tests/swertres.test.js"
+    "test:swertres": "node --test scripts/tests/swertres*.test.js",
+    "swertres:results": "node scripts/swertres-results.js"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

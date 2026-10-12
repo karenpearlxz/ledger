@@ -39,7 +39,7 @@ export async function runDaily(){
    const existing=(await client.query('select combo from swertres_results where draw_date=$1 and draw_time=$2',[r.draw_date,r.draw_time])).rows[0];
    if(existing&&existing.combo!==r.combo)throw Error('Conflicting source result '+r.draw_date+' '+r.draw_time+' stored='+existing.combo+' fetched='+r.combo);
    // A same-combination refresh can update fetch provenance, never the combination.
-   await client.query('insert into swertres_results(draw_date,draw_time,combo,source) values($1,$2,$3,$4) on conflict(draw_date,draw_time) do update set fetched_at=now(),source=excluded.source where swertres_results.combo=excluded.combo',[r.draw_date,r.draw_time,r.combo,r.source]);
+   await client.query('insert into swertres_results(draw_date,draw_time,combo,source) values($1,$2,$3,$4) on conflict(draw_date,draw_time) do update set fetched_at=now(),source=case when swertres_results.official_verified_at is null then excluded.source else swertres_results.source end where swertres_results.combo=excluded.combo',[r.draw_date,r.draw_time,r.combo,r.source]);
   }
   const history=(await client.query('select draw_date,draw_time,combo from swertres_results where draw_date >= $1 and draw_date <= $2 order by draw_date,draw_time',[from,today])).rows.map(r=>({...r,draw_date:isoDate(r.draw_date)})).filter(r=>drawInstant(r.draw_date,r.draw_time)<=now);
   const learned=walkForward(history,today);
@@ -63,7 +63,7 @@ export async function runDaily(){
    }generated=true;
   }
   // Include all previous stored dates so archive backfills score genuine missed draws.
-  const allResults=(await client.query('select draw_date,draw_time,combo from swertres_results order by draw_date,draw_time')).rows.map(r=>({...r,draw_date:isoDate(r.draw_date)}));
+  const allResults=(await client.query('select draw_date,draw_time,combo from swertres_results where official_verified_at is not null order by draw_date,draw_time')).rows.map(r=>({...r,draw_date:isoDate(r.draw_date)}));
   for(const p of stored)for(const r of allResults){
    if(!eligibleFor(p,r)||drawInstant(r.draw_date,r.draw_time)>now)continue;
    const score=matchScore(p.combo,r.combo);

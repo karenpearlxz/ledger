@@ -162,6 +162,7 @@ function PickCard({ p, index, isTop, groupMax }) {
         ) : null}
       </div>
       <Digits combo={p.combo} big />
+      <p className="text-xs text-mute">{p.outcome?.status === 'scored' ? `Exact order ${p.outcome.straight} · Any order ${p.outcome.anyOrder}` : 'Pending official result'}</p>
       <Odds p={p} groupMax={groupMax} />
       <Strategy breakdown={p.strategy_breakdown} />
     </li>
@@ -169,39 +170,38 @@ function PickCard({ p, index, isTop, groupMax }) {
 }
 
 function HistoryRow({ p }) {
-  const scores = p.scores || [];
+  const o = p.outcome;
   return (
     <li className="card p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="eyebrow">{fmtDate(p.pick_date)} · {drawLabel(p.draw_time)} · pick {p.slot}</p>
+          <p className="eyebrow">{fmtDate(p.pick_date)} {String(p.pick_date).slice(0, 4)} · {drawLabel(p.draw_time)} · pick {p.slot}</p>
           <div className="mt-2"><Digits combo={p.combo} /></div>
         </div>
         <p className="text-[0.7rem] text-mute text-right shrink-0 max-w-[8rem]">{targetLabel(p)}</p>
       </div>
-      {scores.length ? (
-        <ul className="mt-3 flex flex-wrap gap-1.5">
-          {scores.map((s, i) => (
-            <li
-              key={i}
-              className={`chip ${s.straight ? 'teal' : s.rambolito ? 'gold' : ''}`}
-            >
-              {fmtDate(s.draw_date)} {drawLabel(s.draw_time)} ·{' '}
-              {s.straight ? 'straight' : s.rambolito ? 'rambolito' : `${s.digit_hits ?? 0} digits`}
-            </li>
-          ))}
-        </ul>
+      {o?.status === 'scored' ? (
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-mute">Official result</span><Digits combo={o.result} />
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            <span className={`chip ${o.straight === 'hit' ? 'teal' : ''}`}>Exact order {o.straight}</span>
+            <span className={`chip ${o.anyOrder === 'hit' ? 'gold' : ''}`}>Any order {o.anyOrder}</span>
+          </div>
+          <p className="text-xs text-mute">{o.digitHits} matching digits · {o.positionHits} in the same position. Partial matches are not wins.</p>
+        </div>
       ) : (
-        <p className="text-xs text-mute mt-3">Waiting for a draw to score against.</p>
+        <p className="text-xs text-mute mt-3">Pending · {o?.reason === 'draw not yet held' ? 'draw not yet held' : 'awaiting the official result'}. Not counted as a miss.</p>
       )}
     </li>
   );
 }
 
-function Results({ results }) {
+function Results({ results, count }) {
   const rows = [...results]
     .sort((a, b) => `${b.draw_date}${b.draw_time}`.localeCompare(`${a.draw_date}${a.draw_time}`))
-    .slice(0, 9);
+    .slice(0, count);
   if (!rows.length) return <Empty title="No draws loaded" hint="Draw results will appear here soon." />;
   return (
     <ul className="card divide-y" style={{ '--tw-divide-opacity': 1 }}>
@@ -221,7 +221,7 @@ function Results({ results }) {
                 className="block text-[0.7rem] underline text-mute"
                 aria-label={`Source archive for ${fmtDate(r.draw_date)} ${drawLabel(r.draw_time)} draw`}
               >
-                source archive
+                {r.officialVerified ? 'official PCSO' : 'source archive · not officially verified'}
               </a>
             ) : r.source ? (
               <span className="block text-[0.7rem] text-mute">{r.source}</span>
@@ -397,6 +397,8 @@ export default function Swertres() {
   const { data, loading, error, reload } = useResource('/swertres');
   const { toast } = useApp();
   const [busy, setBusy] = useState(false);
+  const [historyCount, setHistoryCount] = useState(24);
+  const [resultsCount, setResultsCount] = useState(9);
 
   const refresh = async () => {
     setBusy(true);
@@ -476,7 +478,8 @@ export default function Swertres() {
 
           <section aria-labelledby="sw-draws" className="space-y-3">
             <h2 id="sw-draws" className="eyebrow">recent winning numbers</h2>
-            <Results results={results} />
+            <Results results={results} count={resultsCount} />
+            {resultsCount < results.length ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => setResultsCount((n) => n + 30)}>Show older results ({results.length - resultsCount} more)</button> : null}
             {cov ? (
               <p className="text-xs text-mute">
                 {cov.draws} draws stored, {fmtDate(cov.from)} to {fmtDate(cov.to)}
@@ -486,9 +489,10 @@ export default function Swertres() {
           </section>
 
           <section aria-labelledby="sw-hist" className="space-y-3">
-            <h2 id="sw-hist" className="eyebrow">pick history</h2>
+            <h2 id="sw-hist" className="eyebrow">pick history · {history.length} saved</h2>
+            <p className="text-xs text-mute">Every saved pick stays here. Results are checked around 2:45, 5:45 and 9:45 PM; if PCSO has not published a draw yet, it stays pending until a later check.</p>
             {history.length ? (
-              <ul className="space-y-3">{history.map((p) => <HistoryRow key={pickKey(p)} p={p} />)}</ul>
+              <><ul className="space-y-3">{history.slice(0, historyCount).map((p) => <HistoryRow key={pickKey(p)} p={p} />)}</ul>{historyCount < history.length ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHistoryCount((n) => n + 24)}>Show older picks ({history.length - historyCount} more)</button> : null}</>
             ) : (
               <Empty title="Nothing to score yet" hint="Only real picks are listed. Scores appear after a draw." />
             )}
