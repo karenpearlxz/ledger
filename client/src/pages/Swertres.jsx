@@ -255,7 +255,7 @@ function Strategies({ strategies }) {
               <div className="h-full rounded-pill" style={{ width: `${pct}%`, background: 'var(--teal)' }} />
             </div>
             <p className="text-[0.7rem] text-mute mt-1.5 tabular-nums">
-              backtest: {s.trials ?? 0} trials · {s.straight_hits ?? 0} straight · {s.any_order_hits ?? 0} any order · {s.digit_hits ?? 0} digits
+              backtest: {Math.round(Number(s.trials) || 0)} trials · {s.straight_hits ?? 0} straight · {s.any_order_hits ?? 0} any order · {s.digit_hits ?? 0} digits
             </p>
           </li>
         );
@@ -360,7 +360,7 @@ function Analysis({ a }) {
 
       {pt ? (
         <p className="text-sm text-mute">
-          In {pt.draws} draws: {pt.doubles} had a double and {pt.triples} were triples.
+          In {pt.draws} draws: {pt.doubles} {Number(pt.doubles) === 1 ? 'had a double' : 'had doubles'} and {pt.triples} {Number(pt.triples) === 1 ? 'was a triple' : 'were triples'}.
         </p>
       ) : null}
 
