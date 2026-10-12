@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PORT="${PORT:-8600}"
 PIDFILE="$ROOT/.api.pid"
-LOG="${LOG:-/tmp/ledger.log}"
+LOG="${LOG:-$ROOT/server.log}"
 
 cd "$ROOT"
 
