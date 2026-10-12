@@ -23,7 +23,9 @@ if (!assets.length) {
 }
 
 const html = readFileSync(path.join(dist, 'index.html'), 'utf8');
-const build = createHash('sha256').update(html + assets.join(',')).digest('hex').slice(0, 12);
+// Backend route changes must invalidate the installed shell too.
+const api = readFileSync(path.join(root, '../api/index.js'), 'utf8');
+const build = createHash('sha256').update(html + assets.join(',') + api).digest('hex').slice(0, 12);
 
 const source = readFileSync(swPath, 'utf8')
   // replaceAll, not replace: the placeholders are also named in the file's
