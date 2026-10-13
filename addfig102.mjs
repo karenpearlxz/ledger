@@ -7,7 +7,6 @@ const bq=(text)=>`<blockquote style="border-left:3px solid var(--ember);padding-
 const esc=(s)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/--/g,'&mdash;');
 const poem=(f)=>bq(fs.readFileSync('/tmp/'+f,'utf8').trimEnd().split('\n').map(l=>esc(l).replace(/^ +/,m=>'&nbsp;'.repeat(m.length))).join('<br>'));
 const h=(t)=>`<p style="margin-top:22px;font-style:italic;color:var(--teal)">${t}</p>`;
-const body=sec('childhood &amp; early life',
 
 const d=JSON.parse(fs.readFileSync('/tmp/ec.json','utf8'));
 const ch=(k)=>h('Enchiridion, '+k)+bq(esc(d[k]));
