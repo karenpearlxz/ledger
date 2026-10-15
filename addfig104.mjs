@@ -27,9 +27,9 @@ p('Socrates left no writing, so these are his words as Plato gave them in the Ap
 h('on the oracle at Delphi')+rng(624,650)+rng(698,716)+
 h('on the fear of death')+rng(984,1003)+
 h('on being the gadfly')+rng(1054,1072)+
-h('on the unexamined life')+rng(1303,1311)+
+h('on the unexamined life')+rng(1302,1312).replace(' Also, I have never been accustomed to','')+
 h('on what death might be')+rng(1396,1451)+
 h('the last words of the speech')+rng(1454,1455));
 const r=await one(`insert into ledger.figures (ordinal,slug,name,epithet,lifespan,chip_date,summary,body,quote,quote_source) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning slug`,
-[104,'socrates','Socrates','the man who wrote nothing and changed everything','c. 470 – 399 BC','oct 15, 2026','An Athenian stonemason&rsquo;s son who asked questions in the marketplace until the city sentenced him to death for it, and who was calm about it.',body,'The hour of departure has arrived, and we go our ways—I to die, and you to live. Which is better God only knows.','Plato, Apology, trans. Jowett']);
+[104,'socrates','Socrates','the man who wrote nothing and changed everything','c. 470 – 399 BC','oct 15, 2026','An Athenian stonemason’s son who asked questions in the marketplace until the city sentenced him to death for it, and who was calm about it.',body,'The hour of departure has arrived, and we go our ways—I to die, and you to live. Which is better God only knows.','Plato, Apology, trans. Jowett']);
 console.log(r);process.exit();
