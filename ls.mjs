@@ -1,0 +1,2 @@
+import 'dotenv/config';import {one} from './server/src/lib/db.js';import pg from 'pg';
+const r=await one("select string_agg(name, '; ' order by ordinal) n from figures");console.log(r.n);process.exit(0)
