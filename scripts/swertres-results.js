@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Result-only job. No generator imports, no INSERT/UPDATE/DELETE of pick tables.
+import { officialHistory } from '../server/src/lib/swertres-history.js';
 import { pathToFileURL } from 'node:url';
 import { getPool, closePool } from '../server/src/lib/db.js';
 import { backupLedger } from '../server/src/lib/backup.js';
@@ -45,7 +46,7 @@ export async function runResults({now=new Date(),fetchResults=fetchOfficialResul
    const row=await client.query('insert into swertres_confirmed_draw_scores(pick_date,pick_draw_time,slot,draw_date,draw_time,straight,rambolito,digit_hits,position_hits) values($1,$2,$3,$1,$2,$4,$5,$6,$7) on conflict do nothing',[p.pick_date,p.draw_time,p.slot,s.straight,s.rambolito,s.digit_hits,s.position_hits]);scored+=row.rowCount;
   }
   const scores=(await client.query('select * from swertres_confirmed_draw_scores')).rows.map(s=>({...s,pick_date:isoDate(s.pick_date),draw_date:isoDate(s.draw_date)}));
-  const analysis=dailyAnalysis(results.filter(r=>r.draw_date>=windowStart(today)),picks,scores,now);
+  const analysis=dailyAnalysis(officialHistory(results,windowStart(today),today,now),picks,scores,now);
   // Do not add duplicate analysis snapshots on a no-change rerun.
   if(inserted||verified||scored)await client.query('insert into swertres_daily_runs(run_date,analysis,algorithm_version) values($1,$2,$3)',[today,JSON.stringify(analysis),VERSION]);
   await client.query('COMMIT');

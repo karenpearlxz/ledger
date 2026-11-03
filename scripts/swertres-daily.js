@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadOfficialHistory } from '../server/src/lib/swertres-history.js';
 import { getPool, closePool } from '../server/src/lib/db.js';
 import { backupLedger } from '../server/src/lib/backup.js';
 import { isoDate } from '../server/src/lib/http.js';
@@ -41,7 +42,8 @@ export async function runDaily(){
    // A same-combination refresh can update fetch provenance, never the combination.
    await client.query('insert into swertres_results(draw_date,draw_time,combo,source) values($1,$2,$3,$4) on conflict(draw_date,draw_time) do update set fetched_at=now(),source=case when swertres_results.official_verified_at is null then excluded.source else swertres_results.source end where swertres_results.combo=excluded.combo',[r.draw_date,r.draw_time,r.combo,r.source]);
   }
-  const history=(await client.query('select draw_date,draw_time,combo from swertres_results where draw_date >= $1 and draw_date <= $2 order by draw_date,draw_time',[from,today])).rows.map(r=>({...r,draw_date:isoDate(r.draw_date)})).filter(r=>drawInstant(r.draw_date,r.draw_time)<=now);
+  // Fail closed if official publication is too stale or insufficient.
+  const history=await loadOfficialHistory(client,from,today,now);
   const learned=walkForward(history,today);
   for(const log of learned.logs){
    await client.query('insert into swertres_weight_log(evaluation_date,algorithm_version,history_through,training_draws,weights_before,weights_after,rewards) values($1,$2,$3,$4,$5,$6,$7) on conflict(evaluation_date,algorithm_version) do update set history_through=excluded.history_through,training_draws=excluded.training_draws,weights_before=excluded.weights_before,weights_after=excluded.weights_after,rewards=excluded.rewards where (swertres_weight_log.weights_after,swertres_weight_log.training_draws,swertres_weight_log.rewards) is distinct from (excluded.weights_after,excluded.training_draws,excluded.rewards)',[log.evaluation_date,VERSION,log.history_through,log.training_draws,JSON.stringify(log.before),JSON.stringify(log.after),JSON.stringify(log.rewards)]);
