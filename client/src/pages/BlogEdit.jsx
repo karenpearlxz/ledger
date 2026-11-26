@@ -115,8 +115,11 @@ export default function BlogEdit() {
             writeDraft(res.post.id, { form: latest.current, at: Date.now() });
             clearDraft('new');
           }
-          latest.current.slug = res.post.slug; // lock the generated slug in
-          setForm((f) => ({ ...f, slug: res.post.slug }));
+          // Do not overwrite a slug edited while the first save was in flight.
+          if (latest.current.slug === snap.slug) {
+            latest.current.slug = res.post.slug;
+            setForm((f) => ({ ...f, slug: res.post.slug }));
+          }
           setCreated(true);
           if (!dead.current) navigate(`/blog/${res.post.id}`, { replace: true });
         } else {
@@ -398,7 +401,7 @@ export default function BlogEdit() {
     setUploading((n) => n + 1);
     try {
       const { url } = await uploadImage(file);
-      if (dead.current || !editorRef.current || editorRef.current !== startEd || idRef.current !== startId) return;
+      if (dead.current || !editorRef.current || editorRef.current !== startEd || (startId !== null && idRef.current !== startId)) return;
       setForm((f) => ({ ...f, coverImage: url }));
       change({ coverImage: url });
     } catch (err) { if (err.message !== 'locked') toast(err.message, 'error'); } finally { setUploading((n) => n - 1); }
