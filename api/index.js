@@ -10,7 +10,6 @@ import { env } from '../server/src/lib/env.js';
 import { attachSession, requireSession } from '../server/src/middleware/auth.js';
 import { accountsRouter } from '../server/src/routes/accounts.js';
 import { authRouter } from '../server/src/routes/auth.js';
-import { blogRouter } from '../server/src/routes/blog.js';
 import { contentRouter } from '../server/src/routes/content.js';
 import { expensesRouter } from '../server/src/routes/expenses.js';
 import { salaryRouter } from '../server/src/routes/salary.js';
@@ -63,7 +62,13 @@ app.use('/api/goals', requireSession, goalsRouter);
 app.use('/api/salary', requireSession, salaryRouter);
 app.use('/api/transactions', requireSession, transactionsRouter);
 app.use('/api/content', requireSession, contentRouter);
-app.use('/api/blog', requireSession, blogRouter);
+// Keep optional editor dependencies isolated from the existing finance/content API.
+app.use('/api/blog', requireSession, async (req, res, next) => {
+  try {
+    const { blogRouter } = await import('../server/src/routes/blog.js');
+    blogRouter(req, res, next);
+  } catch (error) { next(error); }
+});
 app.use('/api/swertres', requireSession, swertresRouter);
 
 app.use('/api', (req, res) => {
