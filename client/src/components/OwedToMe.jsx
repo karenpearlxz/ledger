@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { PlusIcon } from './icons.jsx';
 import { ConfirmButton, Sheet } from './ui.jsx';
@@ -155,7 +156,9 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
   }
 
   const status = loan?.status;
-  return (
+  // Fixed panels must escape the page's animated/transformed containers.
+  return createPortal(
+    <div className="owed-section">
     <Sheet
       title={isNew ? 'New loan' : loan.name}
       subtitle={isNew
@@ -279,6 +282,8 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
         </fieldset>
       )}
     </Sheet>
+    </div>,
+    document.body,
   );
 }
 
