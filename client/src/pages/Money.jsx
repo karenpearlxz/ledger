@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import OwedToMe from '../components/OwedToMe.jsx';
 import { PlusIcon } from '../components/icons.jsx';
 import { Bar, ConfirmButton, Empty, Sheet, Skeleton } from '../components/ui.jsx';
 import { api } from '../lib/api.js';
@@ -290,6 +291,8 @@ export default function Money() {
           ))}
         </ul>
       </section>
+
+      <OwedToMe />
 
       <section className="card p-5">
         <h2 className="text-xl mb-1">Income</h2>
