@@ -600,6 +600,7 @@ export default function BlogEdit() {
             <Tb label="Undo (Ctrl+Z)" testid="tb-undo" disabled={!can((c) => c.undo())} onClick={() => ed.chain().focus().undo().run()}><ToolIcon kind="undo" /></Tb>
             <Tb label="Redo (Ctrl+Y)" testid="tb-redo" disabled={!can((c) => c.redo())} onClick={() => ed.chain().focus().redo().run()}><ToolIcon kind="redo" /></Tb>
           </div>
+          <p className="md:hidden px-4 py-1 text-xs text-ink-mute">Swipe the toolbar for more formatting.</p>
 
           {linkOpen ? (
             <form className="flex gap-2 p-2 border-b border-line items-center" role="dialog" aria-label="Edit link" noValidate onSubmit={applyLink} data-testid="blog-link-form">

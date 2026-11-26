@@ -285,8 +285,8 @@
     justify-content: center;
     gap: 3px;
     min-height: 56px;
-    font-size: 0.625rem;
-    letter-spacing: 0.01em;
+    font-size: clamp(8px, 2.45vw, 10px);
+    letter-spacing: 0;
     text-transform: uppercase;
     color: var(--ink-mute);
     text-decoration: none;
@@ -596,3 +596,5 @@
   .blog-print h1 { font-family: var(--serif); font-size: 26pt; margin: 0 0 12pt; }
   .blog-print a { color: #000; }
 }
+
+@media (max-width: 767px) { .toolbar .tb { min-width: 44px; height: 44px; } }
