@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { PlusIcon } from './icons.jsx';
 import { ConfirmButton, Sheet } from './ui.jsx';
@@ -18,12 +18,29 @@ const OWED_CSS = `
 `;
 const STATUS = { paid: 'paid', partial: 'partly paid', outstanding: 'unpaid' };
 
+const fieldsOf = (l) => ({
+  name: l?.name ?? '', amount: l?.amount ?? '', lentDate: l?.lentDate ?? '', dueDate: l?.dueDate ?? '', notes: l?.notes ?? '',
+});
+
+/** Same body again keeps the same operation id (safe retry); a new body or a success gets a fresh one. */
+function opIdFor(ref, body) {
+  const key = JSON.stringify(body);
+  if (!ref.current || ref.current.key !== key) ref.current = { key, id: crypto.randomUUID() };
+  return ref.current.id;
+}
+
 function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
   const isNew = !loanId;
   const { toast } = useApp();
+  const baseRef = useRef(fieldsOf(loan));
+  const createOp = useRef(null);
+  const payOp = useRef(null);
+  const conflictRef = useRef(false);
+  const [editVersion, setEditVersion] = useState(null);
   const [name, setName] = useState(loan?.name ?? '');
   const [amount, setAmount] = useState(loan?.amount ?? '');
   const [lentDate, setLentDate] = useState(loan?.lentDate ?? today);
+  if (isNew && baseRef.current.lentDate === '') baseRef.current = { ...baseRef.current, lentDate: today };
   const [dueDate, setDueDate] = useState(loan?.dueDate ?? '');
   const [notes, setNotes] = useState(loan?.notes ?? '');
   const [busy, setBusy] = useState(false);
@@ -38,18 +55,33 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
   const [payErr, setPayErr] = useState('');
   const [armedPay, setArmedPay] = useState(null);
 
-  async function run(fn, okMsg, setError = setErr) {
+  // Fresh server data: update only fields she hasn't touched; dirty edits stay.
+  useEffect(() => {
+    if (!loan) return;
+    const prev = baseRef.current;
+    const next = fieldsOf(loan);
+    setName((c) => (c === prev.name ? next.name : c));
+    setAmount((c) => (c === prev.amount ? next.amount : c));
+    setLentDate((c) => (c === prev.lentDate ? next.lentDate : c));
+    setDueDate((c) => (c === prev.dueDate ? next.dueDate : c));
+    setNotes((c) => (c === prev.notes ? next.notes : c));
+    baseRef.current = next;
+    if (conflictRef.current) { conflictRef.current = false; setEditVersion(loan.version); }
+  }, [loan]);
+
+  async function run(fn, okMsg, setError = setErr, onResult) {
     setBusy(true);
     setError('');
     try {
       const res = await fn();
+      if (onResult) onResult(res);
       await onChanged();
       if (okMsg) toast(okMsg);
       return res ?? true;
     } catch (e) {
       setError(e.message);
       toast(e.message, 'error');
-      if (e.status === 409) await onChanged();
+      if (e.status === 409) { conflictRef.current = true; await onChanged(); }
       return null;
     } finally {
       setBusy(false);
@@ -62,9 +94,23 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
       name: name.trim(), amount: String(amount).trim(), lentDate,
       dueDate: dueDate || null, notes: notes.trim(),
     };
+    const submitted = { name, amount, lentDate, dueDate, notes };
     const ok = await run(
-      () => (isNew ? api.post('/owed', body) : api.put(`/owed/${loanId}`, { ...body, version: loan.version })),
+      () => (isNew
+        ? api.post('/owed', { ...body, operationId: opIdFor(createOp, body) })
+        : api.put(`/owed/${loanId}`, { ...body, version: loan.version })),
       isNew ? `${body.name} added` : 'Saved',
+      setErr,
+      (res) => {
+        if (isNew) { createOp.current = null; return; }
+        const saved = fieldsOf(res.loan);
+        baseRef.current = saved;
+        setName((c) => (c === submitted.name ? saved.name : c));
+        setAmount((c) => (c === submitted.amount ? saved.amount : c));
+        setLentDate((c) => (c === submitted.lentDate ? saved.lentDate : c));
+        setDueDate((c) => (c === submitted.dueDate ? saved.dueDate : c));
+        setNotes((c) => (c === submitted.notes ? saved.notes : c));
+      },
     );
     if (ok && isNew) onClose();
   }
@@ -75,7 +121,7 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
   }
 
   function resetPay() {
-    setEditing(null); setPayAmount(''); setPayDate(today); setPayNotes(''); setPayErr('');
+    setEditing(null); setEditVersion(null); setPayAmount(''); setPayDate(today); setPayNotes(''); setPayErr('');
   }
 
   async function submitPay(e) {
@@ -83,12 +129,12 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
     const body = { amount: String(payAmount).trim(), paidDate: payDate, notes: payNotes.trim() };
     const ok = await run(
       () => (editing
-        ? api.put(`/owed/${loanId}/payments/${editing}`, body)
-        : api.post(`/owed/${loanId}/payments`, body)),
+        ? api.put(`/owed/${loanId}/payments/${editing}`, { ...body, version: editVersion ?? loan.version })
+        : api.post(`/owed/${loanId}/payments`, { ...body, operationId: opIdFor(payOp, body) })),
       editing ? 'Payment updated' : 'Payment recorded',
       setPayErr,
     );
-    if (ok) resetPay();
+    if (ok) { if (!editing) payOp.current = null; resetPay(); }
   }
 
   async function removePay(p) {
@@ -133,6 +179,7 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
       )}
     >
       <form id="owed-form" onSubmit={submit} className="space-y-4">
+      <fieldset disabled={busy} className="space-y-4 min-w-0 border-0 p-0 m-0">
         <div>
           <label className="label" htmlFor="owed-name">Who owes you</label>
           <input id="owed-name" data-testid="owed-name" className="field" style={{ fontSize: 16 }}
@@ -161,6 +208,7 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
             value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} />
         </div>
         {err ? <p className="text-sm text-ember" role="alert">{err}</p> : null}
+      </fieldset>
       </form>
 
       {isNew ? null : (
@@ -187,7 +235,7 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
                   </span>
                   <button type="button" className="btn btn-ghost btn-sm" style={{ minHeight: 44 }}
                     aria-label={`Edit payment of ${cents(p.amountCents)} on ${fmtDate(p.paidDate)}`}
-                    onClick={() => { setEditing(p.id); setPayAmount(p.amount); setPayDate(p.paidDate); setPayNotes(p.notes ?? ''); setPayErr(''); }}>
+                    onClick={() => { setEditing(p.id); setEditVersion(loan.version); setPayAmount(p.amount); setPayDate(p.paidDate); setPayNotes(p.notes ?? ''); setPayErr(''); }}>
                     Edit
                   </button>
                   <ConfirmButton
@@ -296,7 +344,7 @@ export default function OwedToMe() {
         <LoanSheet key="new" today={data?.today ?? ''} onClose={() => setOpen(null)} onChanged={reload} />
       ) : null}
       {current ? (
-        <LoanSheet key={current.id + ':' + current.version} loanId={current.id} loan={current}
+        <LoanSheet key={current.id} loanId={current.id} loan={current}
           today={data.today} onClose={() => setOpen(null)} onChanged={reload} />
       ) : null}
     </section>
