@@ -86,6 +86,7 @@ export default function BlogEdit() {
   const dead = useRef(false);
   const locked = useRef(false);
   const draftEpoch = useRef(blogDraftEpoch());
+  const draftOwner = useRef(crypto.randomUUID());
   const editorRef = useRef(null);
   const printRef = useRef(null);
   const fileRef = useRef(null);
@@ -93,6 +94,17 @@ export default function BlogEdit() {
   const loadToken = useRef(0);
 
   const draftId = () => idRef.current || 'new';
+  // A previous editor can finish saving after a new editor has claimed the
+  // same recovery key. Async saves may only replace or clear their own draft.
+  const rememberDraft = (id) => {
+    if (draftEpoch.current !== blogDraftEpoch()) return;
+    const existing = readDraft(id);
+    if (dead.current && existing?.owner && existing.owner !== draftOwner.current) return;
+    writeDraft(id, { form: latest.current, at: Date.now(), owner: draftOwner.current });
+  };
+  const clearOwnDraft = (id) => {
+    if (draftEpoch.current === blogDraftEpoch() && readDraft(id)?.owner === draftOwner.current) clearDraft(id);
+  };
 
   const runLoop = useCallback(async () => {
     while (rev.current > savedRev.current && !blocked.current && !locked.current && draftEpoch.current === blogDraftEpoch()) {
@@ -110,10 +122,10 @@ export default function BlogEdit() {
           idRef.current = res.post.id;
           // Edits typed while the POST was in flight were recovered under 'new'.
           // Never delete them: move the newest copy to the real id.
-          if (rev.current === myRev) clearDraft('new');
+          if (rev.current === myRev) clearOwnDraft('new');
           else if (!locked.current && draftEpoch.current === blogDraftEpoch()) {
-            writeDraft(res.post.id, { form: latest.current, at: Date.now() });
-            clearDraft('new');
+            rememberDraft(res.post.id);
+            clearOwnDraft('new');
           }
           // Do not overwrite a slug edited while the first save was in flight.
           if (latest.current.slug === snap.slug) {
@@ -127,8 +139,8 @@ export default function BlogEdit() {
         }
         versionRef.current = res.post.version;
         savedRev.current = myRev;
-        if (rev.current === myRev) clearDraft(draftId());
-        else if (!locked.current && draftEpoch.current === blogDraftEpoch()) writeDraft(draftId(), { form: latest.current, at: Date.now() });
+        if (rev.current === myRev) clearOwnDraft(draftId());
+        else if (!locked.current && draftEpoch.current === blogDraftEpoch()) rememberDraft(draftId());
       } catch (e) {
         if (e.status === 401) { locked.current = true; setSaveState('error'); setSaveMsg('Locked. Unlock to keep saving.'); return; }
         if (e.status === 409 && !e.message.includes('slug')) { blocked.current = true; setSaveState('conflict'); return; }
@@ -162,7 +174,7 @@ export default function BlogEdit() {
   const change = useCallback((patch) => {
     latest.current = { ...latest.current, ...patch };
     rev.current += 1;
-    if (draftEpoch.current === blogDraftEpoch()) writeDraft(draftId(), { form: latest.current, at: Date.now() });
+    if (draftEpoch.current === blogDraftEpoch()) rememberDraft(draftId());
     setSaveState((s) => (s === 'conflict' ? s : 'dirty'));
     if (!blocked.current) {
       clearTimeout(timer.current);
