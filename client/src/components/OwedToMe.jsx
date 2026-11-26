@@ -8,7 +8,7 @@ import { useApp, useResource } from '../lib/store.jsx';
 
 const cents = (c) => peso(c / 100, true);
 const OWED_CSS = `
-.owed-section .btn, .owed-section .sheet .btn { min-height: 44px; }
+.owed-section .btn, .owed-section .sheet .btn { min-height: 44px; min-width: 44px; }
 .owed-section .sheet .btn-sm { min-height: 44px; padding-inline: 14px; }
 .owed-section .sheet-head > div { min-width: 0; }
 .owed-section .sheet-head h2, .owed-section .sheet-head p { overflow-wrap: anywhere; }
