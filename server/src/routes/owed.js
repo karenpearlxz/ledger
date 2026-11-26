@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import express from 'express';
 import { z } from 'zod';
 import { many, one, transaction } from '../lib/db.js';
@@ -24,6 +25,7 @@ function shape(row){
     paidCents,paid:decimalAmount(paidCents),remainingCents,remaining:decimalAmount(remainingCents),status:remainingCents===0?'paid':paidCents>0?'partial':'outstanding',
     version:row.version,payments,createdAt:row.created_at,updatedAt:row.updated_at};
 }
+const operationHash=body=>crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
 const failure=(status,message)=>Object.assign(new Error(message),{owedStatus:status});
 async function readLoan(client,id){return shape((await client.query(selectLoans+' where l.id=$1',[id])).rows[0])}
 async function mutate(id,fn){
@@ -61,11 +63,15 @@ owedRouter.get('/:id',route(async(req,res)=>{
   res.json({loan:shape(row)});
 }));
 owedRouter.post('/',change(async(req,res)=>{
-  const parsed=loanBody.safeParse(req.body);if(!parsed.success)return badRequest(res,parsed);
-  const b=parsed.data;if(b.dueDate&&b.dueDate<b.lentDate)throw failure(400,'due date cannot be before date lent');
+  const parsed=loanBody.extend({operationId:uuid}).safeParse(req.body);if(!parsed.success)return badRequest(res,parsed);
+  const {operationId,...b}=parsed.data;if(b.dueDate&&b.dueDate<b.lentDate)throw failure(400,'due date cannot be before date lent');
   const loan=await transaction(async client=>{
-    const {rows}=await client.query('insert into owed_loans(name,amount_cents,lent_date,due_date,notes) values($1,$2,$3,$4,$5) returning id',[b.name,parseCentavos(b.amount),b.lentDate,b.dueDate,b.notes]);
-    return readLoan(client,rows[0].id);
+    const hash=operationHash({...b,amount:decimalAmount(parseCentavos(b.amount))});
+    const {rows}=await client.query('insert into owed_loans(name,amount_cents,lent_date,due_date,notes,operation_id,operation_hash) values($1,$2,$3,$4,$5,$6,$7) on conflict(operation_id) do nothing returning id',[b.name,parseCentavos(b.amount),b.lentDate,b.dueDate,b.notes,operationId,hash]);
+    if(rows[0])return readLoan(client,rows[0].id);
+    const previous=(await client.query('select id,operation_hash from owed_loans where operation_id=$1',[operationId])).rows[0];
+    if(!previous||previous.operation_hash!==hash)throw failure(409,'this operation was already used for a different loan');
+    return readLoan(client,previous.id);
   });res.status(201).json({loan});
 }));
 owedRouter.put('/:id',change(async(req,res)=>{
@@ -86,15 +92,27 @@ owedRouter.delete('/:id',change(async(req,res)=>{
 }));
 
 async function savePayment(req,res,editing){
-  const parsed=paymentBody.safeParse(req.body);if(!parsed.success)return badRequest(res,parsed);
+  const parsed=(editing?paymentBody.extend({version:z.number().int().positive()}):paymentBody.extend({operationId:uuid})).safeParse(req.body);if(!parsed.success)return badRequest(res,parsed);
   const b=parsed.data,amountCents=parseCentavos(b.amount);
   const loan=await mutate(req.params.id,async(client,current)=>{
+    const hash=operationHash({amount:decimalAmount(amountCents),paidDate:b.paidDate,notes:b.notes});
+    if(!editing){
+      const previous=(await client.query('select loan_id,operation_hash from owed_payments where operation_id=$1',[b.operationId])).rows[0];
+      if(previous){
+        if(previous.loan_id!==req.params.id||previous.operation_hash!==hash)throw failure(409,'this operation was already used for a different payment');
+        return current;
+      }
+    }
+    if(editing&&b.version!==current.version)throw failure(409,'this payment changed elsewhere. Review the latest details and save again');
     const previous=editing?current.payments.find(p=>p.id===req.params.paymentId):null;
     if(editing&&!previous)throw failure(404,'no such payment');
     if(b.paidDate<current.lentDate)throw failure(400,'payment date cannot be before date lent');
     if(amountCents>current.remainingCents+(previous?.amountCents??0))throw failure(400,'payment cannot exceed the remaining balance');
     if(editing)await client.query('update owed_payments set amount_cents=$3,paid_date=$4,notes=$5 where id=$1 and loan_id=$2',[req.params.paymentId,req.params.id,amountCents,b.paidDate,b.notes]);
-    else await client.query('insert into owed_payments(loan_id,amount_cents,paid_date,notes) values($1,$2,$3,$4)',[req.params.id,amountCents,b.paidDate,b.notes]);
+    else {
+      const inserted=await client.query('insert into owed_payments(loan_id,amount_cents,paid_date,notes,operation_id,operation_hash) values($1,$2,$3,$4,$5,$6) on conflict(operation_id) do nothing returning id',[req.params.id,amountCents,b.paidDate,b.notes,b.operationId,hash]);
+      if(!inserted.rows.length)throw failure(409,'this operation was already used for a different payment');
+    }
     await touch(client,req.params.id);return readLoan(client,req.params.id);
   });res.status(editing?200:201).json({loan});
 }
