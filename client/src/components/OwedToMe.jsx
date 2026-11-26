@@ -9,6 +9,9 @@ import { useApp, useResource } from '../lib/store.jsx';
 
 const cents = (c) => peso(c / 100, true);
 const OWED_CSS = `
+/* Global toasts sit at 80. A modal, including its scrim, must outrank them. */
+.owed-dialog .sheet-backdrop { z-index: 81; }
+.owed-dialog .sheet { z-index: 82; }
 .owed-section .btn, .owed-section .sheet .btn { min-height: 44px; min-width: 44px; }
 .owed-section .sheet .btn-sm { min-height: 44px; padding-inline: 14px; }
 .owed-section .sheet-head > div { min-width: 0; }
@@ -158,7 +161,7 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
   const status = loan?.status;
   // Fixed panels must escape the page's animated/transformed containers.
   return createPortal(
-    <div className="owed-section">
+    <div className="owed-section owed-dialog">
     <Sheet
       title={isNew ? 'New loan' : loan.name}
       subtitle={isNew
