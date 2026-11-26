@@ -165,9 +165,9 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
       footer={(
         <div className="flex gap-2 justify-between items-center flex-wrap w-full">
           {isNew ? <span /> : (
-            <span data-testid="owed-delete">
+            <fieldset disabled={busy} className="border-0 p-0 m-0 min-w-0" data-testid="owed-delete">
               <ConfirmButton label="Delete loan" onConfirm={removeLoan} armed={armed} setArmed={setArmed} />
-            </span>
+            </fieldset>
           )}
           <div className="flex gap-2">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
@@ -212,7 +212,7 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
       </form>
 
       {isNew ? null : (
-        <div className="mt-6 pt-5 border-t border-line">
+        <fieldset disabled={busy} className="mt-6 pt-5 border-t border-line min-w-0 border-x-0 border-b-0 p-0 m-0" style={{ paddingTop: 20, marginTop: 24 }}>
           <div className="flex items-center justify-between gap-3 mb-3">
             <h3 className="text-lg">Payments</h3>
             {loan.remainingCents > 0 ? (
@@ -276,7 +276,7 @@ function LoanSheet({ loanId, loan, today, onClose, onChanged }) {
               </div>
             </form>
           ) : (payErr ? <p className="text-sm text-ember" role="alert">{payErr}</p> : null)}
-        </div>
+        </fieldset>
       )}
     </Sheet>
   );
