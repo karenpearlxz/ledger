@@ -9,6 +9,7 @@ import helmet from 'helmet';
 
 import { env } from './lib/env.js';
 import { attachSession, requireSession } from './middleware/auth.js';
+import { owedRouter } from './routes/owed.js';
 import { accountsRouter } from './routes/accounts.js';
 import { authRouter } from './routes/auth.js';
 import { blogRouter } from './routes/blog.js';
@@ -65,6 +66,7 @@ export function createApp() {
   app.use('/api/finance', requireSession, overviewRouter);
   app.use('/api/expenses', requireSession, expensesRouter);
   app.use('/api/accounts', requireSession, accountsRouter);
+  app.use('/api/owed', requireSession, owedRouter);
   app.use('/api/goals', requireSession, goalsRouter);
   app.use('/api/salary', requireSession, salaryRouter);
   app.use('/api/transactions', requireSession, transactionsRouter);
