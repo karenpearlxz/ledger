@@ -30,3 +30,14 @@ test('calendar dates are genuine and leap years are respected', () => {
   for (const date of ['2026-11-27','2024-02-29','2000-02-29']) assert.equal(isIsoDate(date),true,date);
   for (const date of ['2026-02-29','2026-02-31','2026-13-01','2026-01-32','0000-01-01','2026-1-01','bad','']) assert.equal(isIsoDate(date),false,date);
 });
+
+test('centavo parsing and formatting round-trip across the supported range', () => {
+  let seed=0x5eed;
+  for(let i=0;i<10000;i++) {
+    seed=(Math.imul(seed,1664525)+1013904223)>>>0;
+    const amount=1+((seed*3+i)%9999999999);
+    assert.equal(parseCentavos(decimalAmount(amount)),amount);
+    const part=Math.floor(amount/3);
+    if(part>0)assert.equal(remainingCentavos(amount,[part,amount-part]),0);
+  }
+});

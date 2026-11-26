@@ -8,6 +8,10 @@ import {getPool,closePool} from '../src/lib/db.js';
 const baselinePath=process.env.OWED_BASELINE;
 if(!baselinePath)throw Error('OWED_BASELINE full backup is required');
 const backup=JSON.parse(await fs.readFile(baselinePath,'utf8'));
+const lockPath='/tmp/ledger-owed-verification.lock';
+const lock=await fs.open(lockPath,'wx',0o600).catch(()=>{throw Error('another Owed verification owns '+lockPath+'. Do not overlap API or UI suites; inspect the owner before clearing a stale lock.')});
+const lockStat=await lock.stat();
+await lock.writeFile(JSON.stringify({pid:process.pid,startedAt:new Date().toISOString(),suite:'api',base:process.env.BASE_URL||'local'}));
 let server, cookie='',checks=0; const ids=new Set(), creationBodies=new Map();
 const base=process.env.BASE_URL || await new Promise(resolve=>{server=createApp().listen(0,'127.0.0.1',()=>resolve('http://127.0.0.1:'+server.address().port))});
 const log=s=>console.log(s);
@@ -82,5 +86,5 @@ try{
  await check('only additive migrations 013 and 014 were added',async()=>{const current=(await getPool().query('select * from schema_migrations')).rows;for(const old of backup.tables.schema_migrations)assert(current.some(r=>r.name===old.name&&r.checksum===old.checksum));assert.equal(current.length,backup.tables.schema_migrations.length+2);assert(current.some(r=>r.name==='013_owed.sql'));assert(current.some(r=>r.name==='014_owed_retry_safety.sql'))});
  log(checks+' checks passed');
 }finally{
- try{for(const id of ids){const r=await req('/owed/'+id,'DELETE');log('CLEAN fixture '+id+' '+r.status)}if(cookie){assert.equal((await req('/auth/lock','POST',{})).status,200);assert.equal((await req('/owed')).status,401);log('LOCK session revoked verified 401')}}finally{if(server)await new Promise(r=>server.close(r));await closePool()}
+ try{for(const id of ids){const r=await req('/owed/'+id,'DELETE');log('CLEAN fixture '+id+' '+r.status)}if(cookie){assert.equal((await req('/auth/lock','POST',{})).status,200);assert.equal((await req('/owed')).status,401);log('LOCK session revoked verified 401')}}finally{try{if(server)await new Promise(r=>server.close(r));await closePool()}finally{await lock.close();const stat=await fs.lstat(lockPath).catch(e=>{if(e.code==='ENOENT')return null;throw e});if(stat&&stat.dev===lockStat.dev&&stat.ino===lockStat.ino)await fs.unlink(lockPath)}}
 }
