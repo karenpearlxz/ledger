@@ -54,6 +54,16 @@ const AlignIcon = ({ kind }) => {
   );
 };
 
+function ToolIcon({ kind }) {
+  const paths = {
+    image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8" cy="8" r="1.5" /><path d="m21 15-5-5L6 21M3 15l4-4 4 4" /></>,
+    link: <><path d="m10 13 4-4M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0M16 8l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" transform="translate(0 0) scale(.9)" /></>,
+    undo: <><path d="M4 10h10a6 6 0 0 1 0 12M4 10l5-5M4 10l5 5" transform="translate(0 -2)" /></>,
+    redo: <><path d="M20 10H10a6 6 0 0 0 0 12M20 10l-5-5M20 10l-5 5" transform="translate(0 -2)" /></>,
+  };
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[kind]}</svg>;
+}
+
 export default function BlogEdit() {
   const { id: param } = useParams();
   const navigate = useNavigate();
@@ -570,13 +580,13 @@ export default function BlogEdit() {
             <Tb label="Numbered list" testid="tb-ol" active={ed?.isActive('orderedList')} onClick={() => ed.chain().focus().toggleOrderedList().run()}>1.</Tb>
             <Tb label="Quote" testid="tb-quote" active={ed?.isActive('blockquote')} onClick={() => ed.chain().focus().toggleBlockquote().run()}>“</Tb>
             <Tb label="Code" testid="tb-code" active={ed?.isActive('code')} onClick={() => ed.chain().focus().toggleCode().run()}>{'<>'}</Tb>
-            <Tb label="Link (Ctrl+K)" testid="tb-link" active={ed?.isActive('link')} onClick={openLink}>↗</Tb>
+            <Tb label="Link (Ctrl+K)" testid="tb-link" active={ed?.isActive('link')} onClick={openLink}><ToolIcon kind="link" /></Tb>
             <span className="tb-sep" aria-hidden="true" />
             {['left', 'center', 'right'].map((a) => (
               <Tb key={a} label={`Align ${a}`} testid={`tb-align-${a}`} active={ed?.isActive({ textAlign: a })} onClick={() => ed.chain().focus().setTextAlign(a).run()}><AlignIcon kind={a} /></Tb>
             ))}
             <span className="tb-sep" aria-hidden="true" />
-            <Tb label="Insert image" testid="tb-image" onClick={() => fileRef.current?.click()}>▣</Tb>
+            <Tb label="Insert image" testid="tb-image" onClick={() => fileRef.current?.click()}><ToolIcon kind="image" /></Tb>
             <input
               ref={fileRef}
               type="file"
@@ -587,8 +597,8 @@ export default function BlogEdit() {
               onChange={(e) => { const f = imageFiles(e.target.files); e.target.value = ''; if (f.length) insertImages(f); }}
             />
             <span className="tb-sep" aria-hidden="true" />
-            <Tb label="Undo (Ctrl+Z)" testid="tb-undo" disabled={!can((c) => c.undo())} onClick={() => ed.chain().focus().undo().run()}>↶</Tb>
-            <Tb label="Redo (Ctrl+Y)" testid="tb-redo" disabled={!can((c) => c.redo())} onClick={() => ed.chain().focus().redo().run()}>↷</Tb>
+            <Tb label="Undo (Ctrl+Z)" testid="tb-undo" disabled={!can((c) => c.undo())} onClick={() => ed.chain().focus().undo().run()}><ToolIcon kind="undo" /></Tb>
+            <Tb label="Redo (Ctrl+Y)" testid="tb-redo" disabled={!can((c) => c.redo())} onClick={() => ed.chain().focus().redo().run()}><ToolIcon kind="redo" /></Tb>
           </div>
 
           {linkOpen ? (
