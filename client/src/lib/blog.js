@@ -35,6 +35,9 @@ export async function uploadImage(file) {
   return data;
 }
 
+let draftEpoch = 0;
+export const blogDraftEpoch = () => draftEpoch;
+
 const draftKey = (id) => `ledger:blog-draft:${id}`;
 export const readDraft = (id) => {
   try { return JSON.parse(sessionStorage.getItem(draftKey(id)) || 'null'); } catch { return null; }
@@ -44,6 +47,7 @@ export const clearDraft = (id) => { try { sessionStorage.removeItem(draftKey(id)
 
 // Recovery copies are tab-local and are discarded whenever Ledger locks.
 export function clearBlogDrafts() {
+  draftEpoch += 1;
   try {
     for (const key of Object.keys(sessionStorage)) if (key.startsWith('ledger:blog-draft:')) sessionStorage.removeItem(key);
   } catch { /* unavailable storage */ }

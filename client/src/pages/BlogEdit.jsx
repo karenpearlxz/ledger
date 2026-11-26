@@ -9,7 +9,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ConfirmButton, Skeleton } from '../components/ui.jsx';
 import { api } from '../lib/api.js';
 import {
-  clearDraft, IMAGE_TYPES, isEmptyHtml, readDraft, slugify, todayManila, uploadImage, writeDraft,
+  blogDraftEpoch, clearDraft, IMAGE_TYPES, isEmptyHtml, readDraft, slugify, todayManila, uploadImage, writeDraft,
 } from '../lib/blog.js';
 import { useApp } from '../lib/store.jsx';
 
@@ -84,6 +84,8 @@ export default function BlogEdit() {
   const timer = useRef(null);
   const blocked = useRef(false);
   const dead = useRef(false);
+  const locked = useRef(false);
+  const draftEpoch = useRef(blogDraftEpoch());
   const editorRef = useRef(null);
   const printRef = useRef(null);
   const fileRef = useRef(null);
@@ -93,7 +95,7 @@ export default function BlogEdit() {
   const draftId = () => idRef.current || 'new';
 
   const runLoop = useCallback(async () => {
-    while (rev.current > savedRev.current && !blocked.current && !dead.current) {
+    while (rev.current > savedRev.current && !blocked.current && !locked.current && draftEpoch.current === blogDraftEpoch()) {
       const myRev = rev.current;
       const snap = { ...latest.current };
       if (!idRef.current && !snap.title.trim() && isEmptyHtml(snap.html) && !snap.coverImage) {
@@ -106,7 +108,13 @@ export default function BlogEdit() {
         if (!idRef.current) {
           res = await api.post('/blog', snap);
           idRef.current = res.post.id;
-          clearDraft('new');
+          // Edits typed while the POST was in flight were recovered under 'new'.
+          // Never delete them: move the newest copy to the real id.
+          if (rev.current === myRev) clearDraft('new');
+          else if (!locked.current && draftEpoch.current === blogDraftEpoch()) {
+            writeDraft(res.post.id, { form: latest.current, at: Date.now() });
+            clearDraft('new');
+          }
           latest.current.slug = res.post.slug; // lock the generated slug in
           setForm((f) => ({ ...f, slug: res.post.slug }));
           setCreated(true);
@@ -117,8 +125,9 @@ export default function BlogEdit() {
         versionRef.current = res.post.version;
         savedRev.current = myRev;
         if (rev.current === myRev) clearDraft(draftId());
+        else if (!locked.current && draftEpoch.current === blogDraftEpoch()) writeDraft(draftId(), { form: latest.current, at: Date.now() });
       } catch (e) {
-        if (e.status === 401) { setSaveState('error'); setSaveMsg('Locked. Unlock to keep saving.'); return; }
+        if (e.status === 401) { locked.current = true; setSaveState('error'); setSaveMsg('Locked. Unlock to keep saving.'); return; }
         if (e.status === 409 && !e.message.includes('slug')) { blocked.current = true; setSaveState('conflict'); return; }
         if (e.status === 0 || e.status >= 500) {
           setSaveState('offline');
@@ -150,7 +159,7 @@ export default function BlogEdit() {
   const change = useCallback((patch) => {
     latest.current = { ...latest.current, ...patch };
     rev.current += 1;
-    writeDraft(draftId(), { form: latest.current, at: Date.now() });
+    if (draftEpoch.current === blogDraftEpoch()) writeDraft(draftId(), { form: latest.current, at: Date.now() });
     setSaveState((s) => (s === 'conflict' ? s : 'dirty'));
     if (!blocked.current) {
       clearTimeout(timer.current);
@@ -172,7 +181,7 @@ export default function BlogEdit() {
       try {
         const { url } = await uploadImage(file);
         const attrs = { src: url, alt: file.name ? file.name.replace(/\.[^.]+$/, '') : '' };
-        if (!editorRef.current || dead.current) continue;
+        if (!editorRef.current || dead.current || editorRef.current !== ed) continue;
         if (pos != null) { ed.chain().focus().insertContentAt(pos, { type: 'image', attrs }).run(); pos += 2; }
         else ed.chain().focus().setImage(attrs).run();
       } catch (e) {
@@ -190,17 +199,36 @@ export default function BlogEdit() {
     setLinkOpen(true);
   }, []);
 
-  const printNow = useCallback(() => {
+  const fillPrint = useCallback(() => {
     const ed = editorRef.current;
-    if (!ed || !printRef.current) return;
-    printRef.current.innerHTML = '';
+    if (!ed || !printRef.current) return false;
+    const L = latest.current || {};
+    const nodes = [];
+    if (L.coverImage) {
+      const img = document.createElement('img');
+      img.src = L.coverImage;
+      img.alt = '';
+      img.style.cssText = 'max-width:100%;height:auto;margin:0 0 12pt;display:block';
+      nodes.push(img);
+    }
     const h = document.createElement('h1');
-    h.textContent = latest.current.title || 'Untitled';
+    h.textContent = L.title || 'Untitled';
+    nodes.push(h);
+    if (L.postDate) {
+      const d = document.createElement('p');
+      d.textContent = L.postDate;
+      nodes.push(d);
+    }
     const body = document.createElement('div');
     body.innerHTML = ed.getHTML();
-    printRef.current.append(h, body);
-    window.print();
+    nodes.push(body);
+    printRef.current.replaceChildren(...nodes);
+    return true;
   }, []);
+
+  const printNow = useCallback(() => {
+    if (fillPrint()) window.print();
+  }, [fillPrint]);
 
   const editor = useEditor({
     extensions: [
@@ -267,7 +295,7 @@ export default function BlogEdit() {
       if (token !== loadToken.current) return;
       applyServer(post);
       const d = readDraft(param);
-      if (d?.form && (d.form.html !== post.html || d.form.title !== post.title)) setRestore(d);
+      if (d?.form && (['html', 'title', 'coverImage', 'status', 'postDate', 'slug'].some((k) => (d.form[k] || '') !== (post[k] || '')))) setRestore(d);
       setLoading(false);
     }).catch((e) => {
       if (token !== loadToken.current) return;
@@ -290,6 +318,7 @@ export default function BlogEdit() {
   // ---- lifecycle guards -----------------------------------------------
   useEffect(() => {
     dead.current = false;
+    locked.current = false;
     const onBefore = (e) => { if (!isClean() && !blocked.current) { e.preventDefault(); e.returnValue = ''; } };
     const onHide = () => { if (document.visibilityState === 'hidden' && !isClean()) flushRef.current(); };
     const onKey = (e) => {
@@ -298,21 +327,25 @@ export default function BlogEdit() {
       if (k === 'p') { e.preventDefault(); printNow(); }
       if (k === 's') { e.preventDefault(); flushRef.current(); }
     };
+    window.addEventListener('beforeprint', fillPrint);
     window.addEventListener('beforeunload', onBefore);
     document.addEventListener('visibilitychange', onHide);
     document.addEventListener('keydown', onKey, true);
     return () => {
+      window.removeEventListener('beforeprint', fillPrint);
       window.removeEventListener('beforeunload', onBefore);
       document.removeEventListener('visibilitychange', onHide);
       document.removeEventListener('keydown', onKey, true);
       // Leaving the page (any link, even the tab bar) pushes pending edits out.
       // The request outlives the component; if it fails the local draft stays.
       clearTimeout(timer.current);
-      if (!isClean() && !blocked.current) flushRef.current();
       dead.current = true;
+      // The shared loop keeps draining after unmount (it no longer stops on dead);
+      // only a lock (401) or a conflict stops it.
+      if (!isClean() && !blocked.current && !locked.current) flushRef.current();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [printNow]);
+  }, [printNow, fillPrint]);
 
   async function goBack() {
     await flush();
@@ -360,9 +393,12 @@ export default function BlogEdit() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    const startId = idRef.current;
+    const startEd = editorRef.current;
     setUploading((n) => n + 1);
     try {
       const { url } = await uploadImage(file);
+      if (dead.current || !editorRef.current || editorRef.current !== startEd || idRef.current !== startId) return;
       setForm((f) => ({ ...f, coverImage: url }));
       change({ coverImage: url });
     } catch (err) { if (err.message !== 'locked') toast(err.message, 'error'); } finally { setUploading((n) => n - 1); }
