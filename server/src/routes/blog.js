@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import sharp from 'sharp';
 import { z } from 'zod';
 import { one, many, query } from '../lib/db.js';
 import { route, badRequest, isoDate } from '../lib/http.js';
@@ -46,6 +45,9 @@ blogRouter.post('/images', uploadLimiter,
     if (!Buffer.isBuffer(req.body) || !req.body.length) {
       return res.status(400).json({ error: 'choose a JPEG, PNG, WebP or GIF, up to 2 MB' });
     }
+    // Load the native decoder only for uploads. A packaging failure must not
+    // take the rest of Ledger offline, and must not be reported as a bad photo.
+    const { default: sharp } = await import('sharp');
     let bytes;
     try {
       const image = sharp(req.body, { limitInputPixels: 16000000, failOn: 'warning' });

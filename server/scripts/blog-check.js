@@ -70,8 +70,10 @@ try {
 } finally {
   if (postId) await call('/blog/' + postId, 'DELETE');
   if (imageId) await call('/blog/images/' + imageId, 'DELETE');
-  await call('/auth/lock', 'POST');
-  ok((await call('/blog')).status === 401, 'own test session revoked');
+  if (cookie) {
+    await call('/auth/lock', 'POST');
+    ok((await call('/blog')).status === 401, 'own test session revoked');
+  }
   server.close();
   for (const [table, rows] of Object.entries(before.tables)) {
     if (table === 'sessions' || table === 'schema_migrations') continue;
