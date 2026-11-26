@@ -46,3 +46,7 @@ export const AlertIcon = (p) => (
 export const DiceIcon = (p) => (
   <svg {...base} {...p}><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01" /></svg>
 );
+
+export const BlogIcon = (p) => (
+  <svg {...base} {...p}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></svg>
+);

@@ -1,3 +1,4 @@
+import { clearBlogDrafts } from './blog.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api, onLocked } from './api.js';
@@ -20,6 +21,8 @@ export function AppProvider({ children }) {
   const [unlocked, setUnlocked] = useState(null); // null = still asking
   const [toasts, setToasts] = useState([]);
   const timers = useRef(new Map());
+
+  useEffect(() => { if (unlocked === false) clearBlogDrafts(); }, [unlocked]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;

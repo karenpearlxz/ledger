@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import Shell from './components/Shell.jsx';
@@ -10,6 +11,9 @@ import Money from './pages/Money.jsx';
 import Notes from './pages/Notes.jsx';
 import Swertres from './pages/Swertres.jsx';
 import Settings from './pages/Settings.jsx';
+
+const Blog = lazy(() => import('./pages/Blog.jsx'));
+const BlogEdit = lazy(() => import('./pages/BlogEdit.jsx'));
 
 export default function App() {
   const { unlocked } = useApp();
@@ -33,6 +37,8 @@ export default function App() {
         <Route path="/bills" element={<Bills />} />
         <Route path="/money" element={<Money />} />
         <Route path="/notes" element={<Notes />} />
+        <Route path="/blog" element={<Suspense fallback={<p className="eyebrow">opening</p>}><Blog /></Suspense>} />
+        <Route path="/blog/:id" element={<Suspense fallback={<p className="eyebrow">opening</p>}><BlogEdit /></Suspense>} />
         <Route path="/figures" element={<Figures />} />
         <Route path="/swertres" element={<Swertres />} />
         <Route path="/settings" element={<Settings />} />

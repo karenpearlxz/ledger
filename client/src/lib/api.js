@@ -3,6 +3,8 @@ const listeners = new Set();
 
 export const onLocked = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 
+export const notifyLocked = () => listeners.forEach((fn) => fn());
+
 export class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
