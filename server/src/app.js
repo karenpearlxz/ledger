@@ -11,6 +11,7 @@ import { env } from './lib/env.js';
 import { attachSession, requireSession } from './middleware/auth.js';
 import { accountsRouter } from './routes/accounts.js';
 import { authRouter } from './routes/auth.js';
+import { blogRouter } from './routes/blog.js';
 import { contentRouter } from './routes/content.js';
 import { expensesRouter } from './routes/expenses.js';
 import { salaryRouter } from './routes/salary.js';
@@ -68,6 +69,7 @@ export function createApp() {
   app.use('/api/salary', requireSession, salaryRouter);
   app.use('/api/transactions', requireSession, transactionsRouter);
   app.use('/api/content', requireSession, contentRouter);
+  app.use('/api/blog', requireSession, blogRouter);
   app.use('/api/swertres', requireSession, swertresRouter);
 
   app.use('/api', (req, res) => {
